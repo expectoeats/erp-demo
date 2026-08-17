@@ -14,7 +14,7 @@ export interface Column<T> {
   label: string;
   sortable?: boolean;
   className?: string;
-  render?: (value: unknown, row: T) => React.ReactNode;
+  render?: (value: unknown, row: T, index?: number) => React.ReactNode;
 }
 
 interface DataTableProps<T> {
@@ -28,7 +28,7 @@ interface DataTableProps<T> {
   searchValue?: string;
   onSearchChange?: (value: string) => void;
   searchPlaceholder?: string;
-  emptyMessage?: string;
+  emptyMessage?: React.ReactNode;
   actions?: React.ReactNode;
   keyField?: string;
 }
@@ -95,7 +95,7 @@ export function DataTable<T extends Record<string, unknown>>({
               ))
             ) : data.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={columns.length} className="text-center py-10 text-muted-foreground text-xs">
+                <TableCell colSpan={columns.length} className="text-center py-10">
                   {emptyMessage}
                 </TableCell>
               </TableRow>
@@ -105,7 +105,7 @@ export function DataTable<T extends Record<string, unknown>>({
                   {columns.map((col) => (
                     <TableCell key={col.key} className={cn("text-xs", col.className)}>
                       {col.render
-                        ? col.render(row[col.key], row)
+                        ? col.render(row[col.key], row, rowIdx)
                         : String(row[col.key] ?? "")}
                     </TableCell>
                   ))}

@@ -72,7 +72,7 @@ export default function RateListReportPage() {
       key: "rate",
       label: "Rate",
       render: (v, row) =>
-        `${formatCurrency(v as number)}/${String((row as RateListEntry).unit ?? "unit")}`,
+        `${formatCurrency(v as number)}/${String((row as unknown as RateListEntry).unit ?? "unit")}`,
     },
     { key: "unit", label: "Unit" },
     {

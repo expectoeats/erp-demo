@@ -198,7 +198,7 @@ export default function RateListMasterPage() {
       key: "rate",
       label: "Rate",
       render: (v, row) =>
-        `${formatCurrency(v as number)}/${String((row as RateList).unit ?? "unit")}`,
+        `${formatCurrency(v as number)}/${String((row as unknown as RateList).unit ?? "unit")}`,
     },
     {
       key: "effectiveFrom",

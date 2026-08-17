@@ -159,7 +159,7 @@ export default function MeterReadingsPage() {
     {
       key: "_id",
       label: "No",
-      render: (_, __, idx) => `MR-${((page - 1) * 20) + idx + 1}`,
+      render: (_, __, idx: number | undefined) => `MR-${((page - 1) * 20) + (idx ?? 0) + 1}`,
       className: "w-20",
     },
     { key: "meterId", label: "Meter ID" },

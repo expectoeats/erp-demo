@@ -75,7 +75,7 @@ export default function BillingReportPage() {
     {
       key: "billingMonth",
       label: "Billing Period",
-      render: (v, row) => `${String(v ?? "")} ${String((row as BillingEntry).billingYear ?? "")}`,
+      render: (v, row) => `${String(v ?? "")} ${String((row as unknown as BillingEntry).billingYear ?? "")}`,
     },
     {
       key: "grandTotal",
