@@ -1,9 +1,12 @@
-import { auth } from "@/lib/auth";
+import NextAuth from "next-auth";
+import { edgeAuthConfig } from "@/lib/auth/edge-config";
 import { NextResponse } from "next/server";
+
+const { auth } = NextAuth(edgeAuthConfig);
 
 export default auth((req) => {
   const { nextUrl, auth: session } = req;
-  const isLoggedIn = !!session;
+  const isLoggedIn = !!session?.user;
 
   const isAuthPage = nextUrl.pathname === "/login";
   const isApiAuth = nextUrl.pathname.startsWith("/api/auth");
