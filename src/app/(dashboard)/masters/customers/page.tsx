@@ -30,8 +30,10 @@ import {
   Mail,
   Building2,
   FileText,
+  Printer,
 } from "lucide-react";
 import { useDebounce } from "@/hooks/use-debounce";
+import { generateClientReportPDF } from "@/lib/utils/client-report";
 
 interface CustomerService {
   type: string;
@@ -176,7 +178,29 @@ export default function CustomersPage() {
     setViewOpen(true);
   }
 
-  async function handleSave() {
+  function handleGenerateCustomerReport(c: Customer) {
+    const loc = locations.find((l) => l._id === c.billingLocationId);
+    const locName = loc ? `${loc.name}${loc.locationId ? ` (${loc.locationId})` : ""}` : "";
+    generateClientReportPDF({
+      customerId: c.customerId,
+      name: c.name,
+      mobile: c.mobile,
+      email: c.email,
+      gstin: c.gstin,
+      pan: c.pan,
+      address: c.address,
+      city: c.city,
+      state: c.state,
+      pincode: c.pincode,
+      billingType: c.billingType,
+      billingLocationName: locName,
+      services: c.services,
+      isActive: c.isActive,
+      createdAt: c.createdAt,
+    });
+  }
+
+  async function handleSave(withReport = false) {
     if (!form.name.trim()) {
       toast.error("Client Name is required");
       return;
@@ -201,6 +225,30 @@ export default function CustomersPage() {
         return;
       }
       toast.success(editing ? "Client updated successfully" : "Client added successfully");
+
+      if (withReport) {
+        const savedCustomer = d.data || (editing ? { ...editing, ...form } : form);
+        const loc = locations.find((l) => l._id === form.billingLocationId);
+        const locName = loc ? `${loc.name}${loc.locationId ? ` (${loc.locationId})` : ""}` : "";
+        generateClientReportPDF({
+          customerId: savedCustomer.customerId,
+          name: form.name,
+          mobile: form.mobile,
+          email: form.email,
+          gstin: form.gstin,
+          pan: form.pan,
+          address: form.address,
+          city: form.city,
+          state: form.state,
+          pincode: form.pincode,
+          billingType: form.billingType,
+          billingLocationName: locName,
+          services: form.services,
+          isActive: savedCustomer.isActive !== undefined ? savedCustomer.isActive : true,
+          createdAt: savedCustomer.createdAt,
+        });
+      }
+
       setOpen(false);
       load();
     } catch {
@@ -280,11 +328,20 @@ export default function CustomersPage() {
     {
       key: "_id",
       label: "Actions",
-      className: "w-24 text-right",
+      className: "w-28 text-right",
       render: (_, row) => {
         const item = row as unknown as Customer;
         return (
           <div className="flex items-center justify-end gap-1">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              title="Generate Report (PDF)"
+              className="text-slate-600 hover:text-primary"
+              onClick={() => handleGenerateCustomerReport(item)}
+            >
+              <FileText className="h-4 w-4" />
+            </Button>
             <Button
               variant="ghost"
               size="icon-sm"
@@ -419,17 +476,6 @@ export default function CustomersPage() {
                     }
                   />
                 </div>
-                <div>
-                  <Label className="text-xs font-semibold text-slate-700">
-                    Notes / Remarks
-                  </Label>
-                  <Input
-                    className="mt-1.5 bg-white"
-                    placeholder="Additional details..."
-                    value={form.notes}
-                    onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-                  />
-                </div>
               </div>
             </div>
 
@@ -493,40 +539,6 @@ export default function CustomersPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label className="text-xs font-semibold text-slate-700 mb-2 block">
-                    Client Type
-                  </Label>
-                  <div className="flex gap-4 items-center mt-1 bg-white p-2.5 rounded-lg border border-slate-200">
-                    <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="clientType"
-                        value="regular"
-                        checked={form.clientType === "regular"}
-                        onChange={(e) =>
-                          setForm((f) => ({ ...f, clientType: e.target.value }))
-                        }
-                        className="accent-primary h-4 w-4"
-                      />
-                      <span>Regular</span>
-                    </label>
-                    <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="clientType"
-                        value="premium"
-                        checked={form.clientType === "premium"}
-                        onChange={(e) =>
-                          setForm((f) => ({ ...f, clientType: e.target.value }))
-                        }
-                        className="accent-primary h-4 w-4"
-                      />
-                      <span>Premium</span>
-                    </label>
-                  </div>
-                </div>
-
-                <div>
-                  <Label className="text-xs font-semibold text-slate-700 mb-2 block">
                     Billing Location
                   </Label>
                   <select
@@ -545,7 +557,7 @@ export default function CustomersPage() {
                   </select>
                 </div>
 
-                <div className="md:col-span-2">
+                <div>
                   <Label className="text-xs font-semibold text-slate-700 mb-2 block">
                     Billing Frequency
                   </Label>
@@ -684,20 +696,6 @@ export default function CustomersPage() {
                           />
                         </div>
                       </div>
-
-                      <div>
-                        <Label className="text-xs text-slate-600">
-                          Description / Note (Optional)
-                        </Label>
-                        <Input
-                          className="mt-1 h-9 text-xs"
-                          placeholder="e.g. 24/7 Security guard deployment"
-                          value={service.description || ""}
-                          onChange={(e) =>
-                            handleServiceChange(index, "description", e.target.value)
-                          }
-                        />
-                      </div>
                     </div>
                   ))}
                 </div>
@@ -706,7 +704,7 @@ export default function CustomersPage() {
           </div>
 
           {/* Fixed Footer with Visible Buttons */}
-          <DialogFooter className="px-6 py-3.5 border-t border-slate-200 bg-slate-50/90 shrink-0 flex items-center justify-end gap-2.5">
+          <DialogFooter className="px-6 py-3.5 border-t border-slate-200 bg-slate-50/90 shrink-0 flex items-center justify-between gap-2.5">
             <Button
               type="button"
               variant="outline"
@@ -716,15 +714,28 @@ export default function CustomersPage() {
             >
               Cancel
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              className="px-5 shadow-xs"
-              loading={saving}
-              onClick={handleSave}
-            >
-              {editing ? "Update Client" : "Save Client"}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5 border-blue-200 text-blue-600 hover:bg-blue-50 hover:text-blue-700 font-medium shadow-2xs"
+                loading={saving}
+                onClick={() => handleSave(true)}
+              >
+                <FileText className="h-4 w-4 text-blue-600" />
+                Save & Generate Report (PDF)
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                className="px-5 shadow-xs"
+                loading={saving}
+                onClick={() => handleSave(false)}
+              >
+                {editing ? "Update Client" : "Save Client"}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -840,7 +851,7 @@ export default function CustomersPage() {
               )}
           </div>
 
-          <DialogFooter className="px-6 py-3 border-t border-slate-200 bg-slate-50/90 shrink-0">
+          <DialogFooter className="px-6 py-3 border-t border-slate-200 bg-slate-50/90 shrink-0 flex items-center justify-between">
             <Button
               type="button"
               variant="outline"
@@ -849,16 +860,29 @@ export default function CustomersPage() {
             >
               Close
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => {
-                setViewOpen(false);
-                if (viewCustomer) openEdit(viewCustomer);
-              }}
-            >
-              <Pencil className="h-3.5 w-3.5 mr-1" /> Edit Client
-            </Button>
+            <div className="flex items-center gap-2">
+              {viewCustomer && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 border-blue-200 text-blue-600 hover:bg-blue-50 hover:text-blue-700 font-medium shadow-2xs"
+                  onClick={() => handleGenerateCustomerReport(viewCustomer)}
+                >
+                  <FileText className="h-3.5 w-3.5" /> Generate Report (PDF)
+                </Button>
+              )}
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => {
+                  setViewOpen(false);
+                  if (viewCustomer) openEdit(viewCustomer);
+                }}
+              >
+                <Pencil className="h-3.5 w-3.5 mr-1" /> Edit Client
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
