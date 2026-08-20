@@ -5,12 +5,19 @@ import { PageHeader } from "@/components/layout/page-header";
 import { DataTable, Column } from "@/components/layout/data-table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Plus, Pencil, MapPin, Building2, FileText, Hash } from "lucide-react";
+import { Plus, Pencil, MapPin, Building2, FileText, Hash, Landmark } from "lucide-react";
 import { useDebounce } from "@/hooks/use-debounce";
 
 interface Location {
@@ -21,9 +28,23 @@ interface Location {
   state?: string;
   gstin?: string;
   isActive: boolean;
+  bankName?: string;
+  accountNumber?: string;
+  ifscCode?: string;
 }
 
-const empty = { name: "", address: "", state: "", city: "", pincode: "", gstin: "", gstConfig: "" };
+const empty = {
+  name: "",
+  address: "",
+  state: "",
+  city: "",
+  pincode: "",
+  gstin: "",
+  gstConfig: "",
+  bankName: "",
+  accountNumber: "",
+  ifscCode: "",
+};
 
 export default function LocationsPage() {
   const [data, setData] = useState<Location[]>([]);
@@ -39,14 +60,23 @@ export default function LocationsPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const r = await fetch(`/api/locations?search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=20`);
-    const d = await r.json();
-    setData(d.data ?? []);
-    setTotal(d.total ?? 0);
-    setLoading(false);
+    try {
+      const r = await fetch(
+        `/api/locations?search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=20`
+      );
+      const d = await r.json();
+      setData(d.data ?? []);
+      setTotal(d.total ?? 0);
+    } catch {
+      toast.error("Failed to load locations");
+    } finally {
+      setLoading(false);
+    }
   }, [debouncedSearch, page]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   function openAdd() {
     setEditing(null);
@@ -56,37 +86,66 @@ export default function LocationsPage() {
 
   function openEdit(loc: Location) {
     setEditing(loc);
-    setForm({ name: loc.name, address: "", state: loc.state ?? "", city: loc.city ?? "", pincode: "", gstin: loc.gstin ?? "", gstConfig: "" });
+    setForm({
+      name: loc.name || "",
+      address: "",
+      state: loc.state ?? "",
+      city: loc.city ?? "",
+      pincode: "",
+      gstin: loc.gstin ?? "",
+      gstConfig: "",
+      bankName: loc.bankName ?? "",
+      accountNumber: loc.accountNumber ?? "",
+      ifscCode: loc.ifscCode ?? "",
+    });
     setOpen(true);
   }
 
   async function handleSave() {
-    if (!form.name) { toast.error("Name is required"); return; }
+    if (!form.name.trim()) {
+      toast.error("Company Name is required");
+      return;
+    }
+
     setSaving(true);
     try {
       const url = editing ? `/api/locations/${editing._id}` : "/api/locations";
       const method = editing ? "PATCH" : "POST";
-      const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+      const r = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
       const d = await r.json();
-      if (!r.ok) { toast.error(d.error); return; }
+      if (!r.ok) {
+        toast.error(d.error || "Failed to save location");
+        return;
+      }
       toast.success(editing ? "Location updated" : "Location added");
       setOpen(false);
       load();
-    } finally { setSaving(false); }
+    } catch {
+      toast.error("Something went wrong");
+    } finally {
+      setSaving(false);
+    }
   }
 
   const columns: Column<Record<string, unknown>>[] = [
-    { key: "locationId", label: "ID", className: "w-24" },
-    { key: "name", label: "Name" },
+    { key: "locationId", label: "ID", className: "w-24 font-mono font-medium text-xs text-slate-700" },
+    { key: "name", label: "Name", className: "font-semibold text-slate-900" },
     { key: "city", label: "City" },
     { key: "state", label: "State" },
-    { key: "gstin", label: "GSTIN" },
+    { key: "gstin", label: "GSTIN", className: "font-mono text-xs uppercase" },
     {
-      key: "isActive", label: "Status",
-      render: (v) => <Badge variant={v ? "success" : "muted"}>{v ? "Active" : "Inactive"}</Badge>
+      key: "isActive",
+      label: "Status",
+      render: (v) => <Badge variant={v ? "success" : "muted"}>{v ? "Active" : "Inactive"}</Badge>,
     },
     {
-      key: "_id", label: "",
+      key: "_id",
+      label: "",
+      className: "w-16 text-right",
       render: (_, row) => (
         <Button variant="ghost" size="icon-sm" onClick={() => openEdit(row as unknown as Location)}>
           <Pencil className="h-3.5 w-3.5" />
@@ -96,9 +155,11 @@ export default function LocationsPage() {
   ];
 
   return (
-    <div>
-      <PageHeader title="Locations" description="Manage your property locations">
-        <Button size="sm" onClick={openAdd}><Plus className="h-3.5 w-3.5 mr-1" /> Add Location</Button>
+    <div className="space-y-6">
+      <PageHeader title="Locations" description="Manage your property locations and entities">
+        <Button size="sm" onClick={openAdd}>
+          <Plus className="h-3.5 w-3.5 mr-1" /> Add Location
+        </Button>
       </PageHeader>
 
       <DataTable
@@ -116,128 +177,142 @@ export default function LocationsPage() {
       />
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle>{editing ? "Edit Location" : "Add Location"}</DialogTitle>
-            <p className="text-sm text-slate-500">
-              {editing ? "Update the existing location details below." : "Enter the details to create a new property location."}
-            </p>
+        <DialogContent className="flex flex-col max-h-[90vh] w-full max-w-xl p-0 overflow-hidden shadow-2xl">
+          <DialogHeader className="px-6 py-4 border-b border-slate-100 bg-slate-50/80 shrink-0">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                <Building2 className="h-5 w-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-lg font-bold text-slate-900">
+                  {editing ? "Edit Location" : "Add Location"}
+                </DialogTitle>
+                <DialogDescription className="text-xs text-slate-500">
+                  {editing ? "Update existing location details." : "Enter details for the new location entity."}
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
 
-          <div className="space-y-6 px-6 py-5">
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10 text-primary">
-                  <Building2 className="h-3.5 w-3.5" />
-                </div>
-                <h4 className="text-sm font-semibold text-slate-800">Basic Information</h4>
-                <div className="h-px flex-1 bg-slate-100" />
+          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5 bg-white">
+            {/* Basic Information */}
+            <div className="rounded-xl border border-slate-200/80 bg-slate-50/40 p-4 space-y-3">
+              <div className="flex items-center gap-2 font-semibold text-slate-800 text-sm border-b border-slate-200/60 pb-2">
+                <Building2 className="h-4 w-4 text-primary" />
+                <span>Basic Information</span>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="loc-name" className="text-xs font-medium text-slate-600">
-                  Location Name <span className="text-destructive">*</span>
+              <div>
+                <Label className="text-xs font-semibold text-slate-700">
+                  Location / Company Name <span className="text-rose-500">*</span>
                 </Label>
                 <Input
-                  id="loc-name"
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  placeholder="e.g. Jaipur Warehouse"
-                  className="h-10 border-slate-200 bg-slate-50/50 text-sm transition-all placeholder:text-slate-400 focus:border-primary/40 focus:bg-white focus:ring-4 focus:ring-primary/10"
+                  placeholder="e.g. ABC Residency / Sunrise Towers"
+                  className="mt-1 bg-white"
                 />
               </div>
             </div>
 
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-600">
-                  <MapPin className="h-3.5 w-3.5" />
-                </div>
-                <h4 className="text-sm font-semibold text-slate-800">Location Details</h4>
-                <div className="h-px flex-1 bg-slate-100" />
+            {/* Geographical Details */}
+            <div className="rounded-xl border border-slate-200/80 bg-slate-50/40 p-4 space-y-3">
+              <div className="flex items-center gap-2 font-semibold text-slate-800 text-sm border-b border-slate-200/60 pb-2">
+                <MapPin className="h-4 w-4 text-emerald-600" />
+                <span>Address Details</span>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="loc-city" className="text-xs font-medium text-slate-600">City</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="sm:col-span-2">
+                  <Label className="text-xs font-semibold text-slate-700">Full Address</Label>
+                  <Textarea
+                    rows={2}
+                    value={form.address}
+                    onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
+                    placeholder="Building no., Street name, Area, Landmark..."
+                    className="mt-1 bg-white resize-none"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs font-semibold text-slate-700">City</Label>
                   <Input
-                    id="loc-city"
                     value={form.city}
                     onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
                     placeholder="e.g. Jaipur"
-                    className="h-10 border-slate-200 bg-slate-50/50 text-sm transition-all placeholder:text-slate-400 focus:border-primary/40 focus:bg-white focus:ring-4 focus:ring-primary/10"
+                    className="mt-1 bg-white"
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="loc-state" className="text-xs font-medium text-slate-600">State</Label>
+                <div>
+                  <Label className="text-xs font-semibold text-slate-700">State</Label>
                   <Input
-                    id="loc-state"
                     value={form.state}
                     onChange={(e) => setForm((f) => ({ ...f, state: e.target.value }))}
                     placeholder="e.g. Rajasthan"
-                    className="h-10 border-slate-200 bg-slate-50/50 text-sm transition-all placeholder:text-slate-400 focus:border-primary/40 focus:bg-white focus:ring-4 focus:ring-primary/10"
+                    className="mt-1 bg-white"
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="loc-pincode" className="text-xs font-medium text-slate-600">
-                    <span className="inline-flex items-center gap-1"><Hash className="h-3 w-3" /> Pincode</span>
-                  </Label>
+                <div>
+                  <Label className="text-xs font-semibold text-slate-700">Pincode</Label>
                   <Input
-                    id="loc-pincode"
                     value={form.pincode}
                     onChange={(e) => setForm((f) => ({ ...f, pincode: e.target.value }))}
                     placeholder="e.g. 302001"
-                    className="h-10 border-slate-200 bg-slate-50/50 text-sm transition-all placeholder:text-slate-400 focus:border-primary/40 focus:bg-white focus:ring-4 focus:ring-primary/10"
+                    className="mt-1 bg-white"
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="loc-gstin" className="text-xs font-medium text-slate-600">
-                    <span className="inline-flex items-center gap-1"><FileText className="h-3 w-3" /> GSTIN</span>
-                  </Label>
+                <div>
+                  <Label className="text-xs font-semibold text-slate-700">GSTIN</Label>
                   <Input
-                    id="loc-gstin"
                     value={form.gstin}
-                    onChange={(e) => setForm((f) => ({ ...f, gstin: e.target.value }))}
+                    onChange={(e) => setForm((f) => ({ ...f, gstin: e.target.value.toUpperCase() }))}
                     placeholder="e.g. 08AAABC1234D1Z5"
-                    className="h-10 border-slate-200 bg-slate-50/50 font-mono text-xs uppercase tracking-wider transition-all placeholder:text-slate-400 placeholder:normal-case placeholder:tracking-normal focus:border-primary/40 focus:bg-white focus:ring-4 focus:ring-primary/10"
+                    className="mt-1 bg-white uppercase font-mono text-xs"
                   />
                 </div>
               </div>
             </div>
 
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-md bg-amber-500/10 text-amber-600">
-                  <MapPin className="h-3.5 w-3.5" />
-                </div>
-                <h4 className="text-sm font-semibold text-slate-800">Full Address</h4>
-                <div className="h-px flex-1 bg-slate-100" />
+            {/* Bank Details */}
+            <div className="rounded-xl border border-slate-200/80 bg-slate-50/40 p-4 space-y-3">
+              <div className="flex items-center gap-2 font-semibold text-slate-800 text-sm border-b border-slate-200/60 pb-2">
+                <Landmark className="h-4 w-4 text-blue-600" />
+                <span>Bank Account Details</span>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="loc-address" className="text-xs font-medium text-slate-600">Street Address</Label>
-                <Textarea
-                  id="loc-address"
-                  rows={3}
-                  value={form.address}
-                  onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
-                  placeholder="Building no., Street name, Area, Landmark..."
-                  className="border-slate-200 bg-slate-50/50 text-sm transition-all placeholder:text-slate-400 focus:border-primary/40 focus:bg-white focus:ring-4 focus:ring-primary/10"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="sm:col-span-2">
+                  <Label className="text-xs font-semibold text-slate-700">Bank Name</Label>
+                  <Input
+                    value={form.bankName}
+                    onChange={(e) => setForm((f) => ({ ...f, bankName: e.target.value }))}
+                    placeholder="e.g. State Bank of India / HDFC Bank"
+                    className="mt-1 bg-white"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs font-semibold text-slate-700">Account Number</Label>
+                  <Input
+                    value={form.accountNumber}
+                    onChange={(e) => setForm((f) => ({ ...f, accountNumber: e.target.value }))}
+                    placeholder="e.g. 1234567890"
+                    className="mt-1 bg-white font-mono"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs font-semibold text-slate-700">IFSC Code</Label>
+                  <Input
+                    value={form.ifscCode}
+                    onChange={(e) => setForm((f) => ({ ...f, ifscCode: e.target.value.toUpperCase() }))}
+                    placeholder="e.g. SBIN0001234"
+                    className="mt-1 bg-white font-mono uppercase"
+                  />
+                </div>
               </div>
             </div>
           </div>
 
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setOpen(false)}
-              className="h-9 border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900"
-            >
+          <DialogFooter className="px-6 py-3.5 border-t border-slate-200 bg-slate-50/90 shrink-0 flex items-center justify-end gap-2.5">
+            <Button variant="outline" size="sm" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button
-              loading={saving}
-              onClick={handleSave}
-              className="h-9 px-5 text-sm font-medium shadow-sm shadow-primary/20 transition-all hover:shadow-md hover:shadow-primary/25"
-            >
+            <Button size="sm" loading={saving} onClick={handleSave}>
               {editing ? "Update Location" : "Save Location"}
             </Button>
           </DialogFooter>
