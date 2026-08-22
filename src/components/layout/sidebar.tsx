@@ -4,15 +4,11 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import Image from "next/image";
 import {
   LayoutDashboard,
-  MapPin,
-  Map,
   Users,
   Building2,
-  Wrench,
-  Gauge,
-  List,
   FileText,
   Settings,
   ChevronDown,
@@ -49,13 +45,7 @@ const navItems: NavItem[] = [
     label: "Masters",
     icon: Building,
     children: [
-      { label: "Locations", href: "/masters/locations", icon: MapPin },
-      { label: "Sub Locations", href: "/masters/sub-locations", icon: Map },
-      { label: "Customers", href: "/masters/customers", icon: Users },
-      { label: "Units / Properties", href: "/masters/units", icon: Building2 },
-      { label: "Services", href: "/masters/services", icon: Wrench },
-      { label: "Meters", href: "/masters/meters", icon: Gauge },
-      { label: "Rate Lists", href: "/masters/rate-lists", icon: List },
+      { label: "Clients", href: "/masters/customers", icon: Users },
       { label: "Bill Types", href: "/masters/bill-types", icon: FileText },
       { label: "Financial Years", href: "/masters/financial-years", icon: CalendarDays },
     ],
@@ -78,7 +68,6 @@ const navItems: NavItem[] = [
       { label: "Bills", href: "/transactions/bills", icon: ScrollText },
       { label: "Payments", href: "/transactions/payments", icon: CreditCard },
       { label: "Receipts", href: "/transactions/receipts", icon: Receipt },
-      { label: "Meter Readings", href: "/transactions/meter-readings", icon: Gauge },
       { label: "Vouchers", href: "/transactions/vouchers", icon: BookOpen },
       { label: "Property Transfer", href: "/transactions/property-transfer", icon: ArrowLeftRight },
     ],
@@ -87,13 +76,11 @@ const navItems: NavItem[] = [
     label: "Reports",
     icon: BarChart2,
     children: [
-      { label: "Customer Ledger", href: "/reports/customer-ledger", icon: BookOpen },
+      { label: "Client Ledger", href: "/reports/customer-ledger", icon: BookOpen },
       { label: "Collection Report", href: "/reports/collection", icon: TrendingUp },
       { label: "Billing Report", href: "/reports/billing", icon: FileBarChart },
       { label: "Outstanding Report", href: "/reports/outstanding", icon: AlertCircle },
       { label: "Defaulter Report", href: "/reports/defaulters", icon: UserCheck },
-      { label: "Unit Report", href: "/reports/units", icon: Building2 },
-      { label: "Rate List Report", href: "/reports/rate-list", icon: List },
       { label: "MIS Summary", href: "/reports/mis", icon: PieChart },
       { label: "Receipt Report", href: "/reports/receipts", icon: Receipt },
       { label: "Transfer Report", href: "/reports/transfers", icon: ArrowLeftRight },
@@ -181,15 +168,20 @@ export function Sidebar() {
     <aside className="fixed left-0 top-0 h-full w-56 sidebar-bg flex flex-col z-30 border-r sidebar-border">
       {/* Logo */}
       <div className="h-14 flex items-center px-4 border-b sidebar-border shrink-0">
-        <div className="flex items-center gap-2.5">
-          <div className="h-7 w-7 rounded-md bg-primary flex items-center justify-center">
-            <Building2 className="h-4 w-4 text-white" />
+        <Link href="/dashboard" className="flex items-center gap-2.5">
+          <div className="h-8 w-8 rounded-lg overflow-hidden flex items-center justify-center bg-white shrink-0 p-0.5 shadow-xs">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/logo.jpeg"
+              alt="PropertyERP Logo"
+              className="h-full w-full object-contain rounded-md"
+            />
           </div>
           <div>
-            <div className="text-sm font-semibold text-white leading-none">PropertyERP</div>
+            <div className="text-sm font-bold text-white leading-none tracking-tight">PropertyERP</div>
             <div className="text-[10px] sidebar-muted mt-0.5">Management System</div>
           </div>
-        </div>
+        </Link>
       </div>
 
       {/* Nav */}

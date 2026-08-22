@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
+import Image from "next/image";
+
 function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
@@ -91,11 +93,16 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="text-center mb-7">
-          <div className="inline-flex items-center justify-center h-12 w-12 rounded-xl bg-primary mb-4">
-            <Building2 className="h-6 w-6 text-white" />
+          <div className="inline-flex items-center justify-center h-16 w-16 rounded-2xl bg-white p-2 border border-slate-200/80 shadow-md mb-4">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/logo.jpeg"
+              alt="PropertyERP Logo"
+              className="h-full w-full object-contain rounded-xl"
+            />
           </div>
-          <h1 className="text-lg font-semibold text-foreground">PropertyERP</h1>
-          <p className="text-xs text-muted-foreground mt-1">Property & Billing Management</p>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">PropertyERP</h1>
+          <p className="text-xs text-slate-500 mt-1">Property & Client Billing Management System</p>
         </div>
 
         {/* Card */}

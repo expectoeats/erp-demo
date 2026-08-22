@@ -23,9 +23,9 @@ export interface IBill extends Document {
   billTypeId: mongoose.Types.ObjectId;
   financialYearId: mongoose.Types.ObjectId;
   customerId: mongoose.Types.ObjectId;
-  unitId: mongoose.Types.ObjectId;
-  locationId: mongoose.Types.ObjectId;
-  subLocationId: mongoose.Types.ObjectId;
+  unitId?: mongoose.Types.ObjectId;
+  locationId?: mongoose.Types.ObjectId;
+  subLocationId?: mongoose.Types.ObjectId;
   invoiceDate: Date;
   dueDate: Date;
   billingMonth: string;
@@ -51,12 +51,12 @@ export interface IBill extends Document {
 }
 
 const BillItemSchema = new Schema<IBillItem>({
-  serviceId: { type: Schema.Types.ObjectId, ref: "Service", required: true },
+  serviceId: { type: Schema.Types.ObjectId, ref: "Service" },
   serviceName: { type: String, required: true },
-  serviceCode: { type: String, required: true },
-  calculationType: { type: String, required: true },
-  quantity: { type: Number, required: true },
-  unit: { type: String, required: true },
+  serviceCode: { type: String },
+  calculationType: { type: String, default: "FIXED" },
+  quantity: { type: Number, required: true, default: 1 },
+  unit: { type: String, default: "unit" },
   rate: { type: Number, required: true },
   amount: { type: Number, required: true },
   isTaxable: { type: Boolean, default: false },
@@ -72,9 +72,9 @@ const BillSchema = new Schema<IBill>(
     billTypeId: { type: Schema.Types.ObjectId, ref: "BillType", required: true },
     financialYearId: { type: Schema.Types.ObjectId, ref: "FinancialYear", required: true },
     customerId: { type: Schema.Types.ObjectId, ref: "Customer", required: true },
-    unitId: { type: Schema.Types.ObjectId, ref: "Unit", required: true },
-    locationId: { type: Schema.Types.ObjectId, ref: "Location", required: true },
-    subLocationId: { type: Schema.Types.ObjectId, ref: "SubLocation", required: true },
+    unitId: { type: Schema.Types.ObjectId, ref: "Unit" },
+    locationId: { type: Schema.Types.ObjectId, ref: "Location" },
+    subLocationId: { type: Schema.Types.ObjectId, ref: "SubLocation" },
     invoiceDate: { type: Date, required: true },
     dueDate: { type: Date, required: true },
     billingMonth: { type: String, required: true },

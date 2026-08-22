@@ -11,6 +11,8 @@ export interface ClientReportData {
   pincode?: string;
   billingType?: string;
   billingLocationName?: string;
+  billingStartDate?: string;
+  nextBillingDate?: string;
   services?: Array<{
     type: string;
     rate: number;
@@ -407,9 +409,12 @@ export function generateClientReportPDF(data: ClientReportData) {
       <div class="page-container">
         <!-- Header -->
         <div class="header">
-          <div class="header-left">
-            <h1>Client Profile Report</h1>
-            <p>Comprehensive Client Information & Billing Summary</p>
+          <div style="display: flex; align-items: center; gap: 16px;">
+            <img src="/logo.jpeg" alt="Logo" style="height: 48px; width: 48px; border-radius: 8px; object-fit: contain;" onerror="this.style.display='none'" />
+            <div class="header-left">
+              <h1>Client Profile Report</h1>
+              <p>Comprehensive Client Information & Billing Summary</p>
+            </div>
           </div>
           <div class="header-right">
             <div>
@@ -432,7 +437,7 @@ export function generateClientReportPDF(data: ClientReportData) {
         <div class="card-box">
           <div class="grid-2">
             <div class="info-group">
-              <span class="info-label">Client / Party Name</span>
+              <span class="info-label">Client Name</span>
               <span class="info-value" style="font-size: 15px; color: #2563eb;">${data.name || "-"}</span>
             </div>
             <div class="info-group">
@@ -487,7 +492,7 @@ export function generateClientReportPDF(data: ClientReportData) {
         <!-- Section 3: Billing Preferences -->
         <div class="section-title">
           <span class="dot"></span>
-          <span>3. Billing Preferences</span>
+          <span>3. Billing Preferences & Schedule</span>
         </div>
         <div class="card-box">
           <div class="grid-2">
@@ -498,6 +503,14 @@ export function generateClientReportPDF(data: ClientReportData) {
             <div class="info-group">
               <span class="info-label">Billing Cycle / Frequency</span>
               <span class="info-value" style="text-transform: capitalize;">${data.billingType || "Monthly"}</span>
+            </div>
+            <div class="info-group">
+              <span class="info-label">Billing Start Date</span>
+              <span class="info-value">${data.billingStartDate ? new Date(data.billingStartDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "-"}</span>
+            </div>
+            <div class="info-group">
+              <span class="info-label">Next Bill Generation Date</span>
+              <span class="info-value" style="color: #2563eb;">${data.nextBillingDate ? new Date(data.nextBillingDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "-"}</span>
             </div>
           </div>
         </div>

@@ -28,18 +28,27 @@ import {
   Layers,
   Phone,
   Mail,
-  Building2,
   FileText,
-  Printer,
+  Calendar,
+  Receipt,
+  CheckCircle2,
+  Clock,
 } from "lucide-react";
 import { useDebounce } from "@/hooks/use-debounce";
 import { generateClientReportPDF } from "@/lib/utils/client-report";
+import { formatCurrency, formatDate } from "@/lib/utils";
 
 interface CustomerService {
   type: string;
   rate: number;
   units: number;
   description?: string;
+}
+
+interface LocationRef {
+  _id: string;
+  name: string;
+  locationId?: string;
 }
 
 interface Customer {
@@ -56,11 +65,25 @@ interface Customer {
   pincode?: string;
   notes?: string;
   isActive: boolean;
-  clientType?: "regular" | "premium";
   billingType?: "monthly" | "quarterly" | "yearly";
-  billingLocationId?: string;
+  billingLocationId?: string | LocationRef;
+  billingStartDate?: string;
+  nextBillingDate?: string;
   services?: CustomerService[];
   createdAt?: string;
+}
+
+interface CustomerBill {
+  _id: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  dueDate: string;
+  billingMonth: string;
+  billingYear: number;
+  grandTotal: number;
+  paidAmount: number;
+  outstandingAmount: number;
+  status: "unpaid" | "partially_paid" | "paid" | "overdue" | "cancelled";
 }
 
 interface LocationOption {
@@ -80,9 +103,9 @@ const emptyForm = {
   city: "",
   pincode: "",
   notes: "",
-  clientType: "regular",
   billingType: "monthly",
   billingLocationId: "",
+  billingStartDate: new Date().toISOString().split("T")[0],
   services: [] as CustomerService[],
 };
 
@@ -105,6 +128,7 @@ export default function CustomersPage() {
   const [open, setOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
   const [viewCustomer, setViewCustomer] = useState<Customer | null>(null);
+  const [viewCustomerBills, setViewCustomerBills] = useState<CustomerBill[]>([]);
   const [editing, setEditing] = useState<Customer | null>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -154,6 +178,15 @@ export default function CustomersPage() {
 
   function openEdit(c: Customer) {
     setEditing(c);
+    const locId =
+      typeof c.billingLocationId === "object" && c.billingLocationId !== null
+        ? (c.billingLocationId as LocationRef)._id
+        : (c.billingLocationId as string) || "";
+
+    const startDate = c.billingStartDate
+      ? new Date(c.billingStartDate).toISOString().split("T")[0]
+      : new Date().toISOString().split("T")[0];
+
     setForm({
       name: c.name || "",
       mobile: c.mobile || "",
@@ -165,22 +198,43 @@ export default function CustomersPage() {
       city: c.city || "",
       pincode: c.pincode || "",
       notes: c.notes || "",
-      clientType: c.clientType || "regular",
       billingType: c.billingType || "monthly",
-      billingLocationId: c.billingLocationId || "",
+      billingLocationId: locId,
+      billingStartDate: startDate,
       services: Array.isArray(c.services) ? c.services : [],
     });
     setOpen(true);
   }
 
-  function handleView(c: Customer) {
+  async function handleView(c: Customer) {
     setViewCustomer(c);
+    setViewCustomerBills([]);
     setViewOpen(true);
+
+    try {
+      const res = await fetch(`/api/customers/${c._id}`);
+      const json = await res.json();
+      if (json.data) {
+        if (json.data.customer) setViewCustomer(json.data.customer);
+        if (json.data.recentBills) setViewCustomerBills(json.data.recentBills);
+      }
+    } catch {
+      // ignore silently
+    }
   }
 
   function handleGenerateCustomerReport(c: Customer) {
-    const loc = locations.find((l) => l._id === c.billingLocationId);
-    const locName = loc ? `${loc.name}${loc.locationId ? ` (${loc.locationId})` : ""}` : "";
+    const locId =
+      typeof c.billingLocationId === "object" && c.billingLocationId !== null
+        ? (c.billingLocationId as LocationRef)._id
+        : (c.billingLocationId as string) || "";
+    const loc = locations.find((l) => l._id === locId);
+    const locName = loc
+      ? `${loc.name}${loc.locationId ? ` (${loc.locationId})` : ""}`
+      : typeof c.billingLocationId === "object" && c.billingLocationId !== null
+      ? (c.billingLocationId as LocationRef).name
+      : "";
+
     generateClientReportPDF({
       customerId: c.customerId,
       name: c.name,
@@ -194,6 +248,8 @@ export default function CustomersPage() {
       pincode: c.pincode,
       billingType: c.billingType,
       billingLocationName: locName,
+      billingStartDate: c.billingStartDate,
+      nextBillingDate: c.nextBillingDate,
       services: c.services,
       isActive: c.isActive,
       createdAt: c.createdAt,
@@ -224,12 +280,16 @@ export default function CustomersPage() {
         toast.error(d.error || "Failed to save client");
         return;
       }
-      toast.success(editing ? "Client updated successfully" : "Client added successfully");
+      toast.success(
+        editing ? "Client updated successfully" : "Client added successfully"
+      );
 
       if (withReport) {
         const savedCustomer = d.data || (editing ? { ...editing, ...form } : form);
         const loc = locations.find((l) => l._id === form.billingLocationId);
-        const locName = loc ? `${loc.name}${loc.locationId ? ` (${loc.locationId})` : ""}` : "";
+        const locName = loc
+          ? `${loc.name}${loc.locationId ? ` (${loc.locationId})` : ""}`
+          : "";
         generateClientReportPDF({
           customerId: savedCustomer.customerId,
           name: form.name,
@@ -243,8 +303,10 @@ export default function CustomersPage() {
           pincode: form.pincode,
           billingType: form.billingType,
           billingLocationName: locName,
+          billingStartDate: form.billingStartDate,
           services: form.services,
-          isActive: savedCustomer.isActive !== undefined ? savedCustomer.isActive : true,
+          isActive:
+            savedCustomer.isActive !== undefined ? savedCustomer.isActive : true,
           createdAt: savedCustomer.createdAt,
         });
       }
@@ -263,7 +325,7 @@ export default function CustomersPage() {
       ...prev,
       services: [
         ...prev.services,
-        { type: "maintenance", rate: 0, units: 1, description: "" },
+        { type: "maintenance", rate: 0, units: 1 },
       ],
     }));
   };
@@ -292,29 +354,60 @@ export default function CustomersPage() {
     {
       key: "customerId",
       label: "Client ID",
-      className: "w-28 font-mono font-medium text-xs text-slate-700",
+      className: "w-28 font-mono font-semibold text-xs text-slate-800",
     },
     {
       key: "name",
-      label: "Name",
+      label: "Name & Contact",
       render: (v, row) => (
         <div>
           <div className="font-semibold text-slate-900">{String(v || "-")}</div>
-          {Boolean(row.email) && (
-            <div className="text-xs text-slate-500">{String(row.email)}</div>
-          )}
+          <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+            <span>{String(row.mobile || "")}</span>
+            {Boolean(row.email) && <span>• {String(row.email)}</span>}
+          </div>
         </div>
       ),
     },
-    { key: "mobile", label: "Mobile" },
     {
-      key: "city",
-      label: "Location",
-      render: (v, row) => (
-        <span className="text-slate-600">
-          {[v, row.state].filter(Boolean).join(", ") || "-"}
-        </span>
-      ),
+      key: "billingType",
+      label: "Billing Cycle",
+      render: (v, row) => {
+        const item = row as unknown as Customer;
+        const totalServices = (item.services || []).reduce(
+          (acc, s) => acc + (Number(s.rate) || 0) * (Number(s.units) || 1),
+          0
+        );
+        return (
+          <div>
+            <div className="capitalize font-medium text-slate-800 flex items-center gap-1.5">
+              <span>{String(v || "Monthly")}</span>
+              <span className="text-slate-400">•</span>
+              <span className="font-semibold text-primary">
+                {formatCurrency(totalServices)}
+              </span>
+            </div>
+            {item.billingStartDate && (
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                Starts: {formatDate(item.billingStartDate)}
+              </div>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      key: "nextBillingDate",
+      label: "Next Bill Date",
+      render: (v) =>
+        v ? (
+          <div className="flex items-center gap-1 text-xs font-medium text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md w-fit">
+            <Clock className="h-3 w-3" />
+            {formatDate(String(v))}
+          </div>
+        ) : (
+          <span className="text-slate-400 text-xs">-</span>
+        ),
     },
     {
       key: "isActive",
@@ -337,7 +430,7 @@ export default function CustomersPage() {
               variant="ghost"
               size="icon-sm"
               title="Generate Report (PDF)"
-              className="text-slate-600 hover:text-primary"
+              className="text-slate-600 hover:text-primary hover:bg-slate-100"
               onClick={() => handleGenerateCustomerReport(item)}
             >
               <FileText className="h-4 w-4" />
@@ -346,17 +439,19 @@ export default function CustomersPage() {
               variant="ghost"
               size="icon-sm"
               title="View Details"
+              className="text-slate-600 hover:text-slate-900 hover:bg-slate-100"
               onClick={() => handleView(item)}
             >
-              <Eye className="h-4 w-4 text-slate-600" />
+              <Eye className="h-4 w-4" />
             </Button>
             <Button
               variant="ghost"
               size="icon-sm"
               title="Edit Client"
+              className="text-primary hover:text-primary hover:bg-primary/10"
               onClick={() => openEdit(item)}
             >
-              <Pencil className="h-4 w-4 text-primary" />
+              <Pencil className="h-4 w-4" />
             </Button>
           </div>
         );
@@ -367,8 +462,8 @@ export default function CustomersPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Clients / Parties"
-        description="Manage customer profiles, billing preferences, and assigned services"
+        title="Clients"
+        description="Manage client profiles, billing start dates, frequencies, and assigned recurring services"
       >
         <Button onClick={openAdd} className="shadow-sm">
           <Plus className="h-4 w-4 mr-1.5" /> Add Client
@@ -385,8 +480,8 @@ export default function CustomersPage() {
         onPageChange={setPage}
         searchValue={search}
         onSearchChange={setSearch}
-        searchPlaceholder="Search by name, mobile, email, client ID..."
-        emptyMessage="No clients found."
+        searchPlaceholder="Search by client name, mobile, email, client ID..."
+        emptyMessage="No clients found. Click 'Add Client' to onboard your first client."
       />
 
       {/* Add / Edit Client Dialog */}
@@ -403,7 +498,7 @@ export default function CustomersPage() {
                   {editing ? `Edit Client: ${editing.name}` : "Add New Client"}
                 </DialogTitle>
                 <DialogDescription className="text-xs text-slate-500">
-                  Fill in customer profile information and billing details below.
+                  Fill in client profile information, billing frequency, start date, and services.
                 </DialogDescription>
               </div>
             </div>
@@ -420,7 +515,7 @@ export default function CustomersPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label className="text-xs font-semibold text-slate-700">
-                    Client / Party Name <span className="text-rose-500">*</span>
+                    Client Name <span className="text-rose-500">*</span>
                   </Label>
                   <Input
                     className="mt-1.5 bg-white"
@@ -530,13 +625,13 @@ export default function CustomersPage() {
               </div>
             </div>
 
-            {/* Section 3: Billing Preferences */}
+            {/* Section 3: Billing & Preferences */}
             <div className="rounded-xl border border-slate-200/80 bg-slate-50/40 p-4 space-y-4">
               <div className="flex items-center gap-2 font-semibold text-slate-800 text-sm border-b border-slate-200/60 pb-2">
                 <CreditCard className="h-4 w-4 text-indigo-600" />
-                <span>Billing & Preferences</span>
+                <span>Billing Preferences & Schedule</span>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <Label className="text-xs font-semibold text-slate-700 mb-2 block">
                     Billing Location
@@ -561,11 +656,11 @@ export default function CustomersPage() {
                   <Label className="text-xs font-semibold text-slate-700 mb-2 block">
                     Billing Frequency
                   </Label>
-                  <div className="flex flex-wrap gap-4 items-center mt-1 bg-white p-2.5 rounded-lg border border-slate-200">
+                  <div className="flex flex-wrap gap-3 items-center mt-1 bg-white p-2 rounded-lg border border-slate-200">
                     {["monthly", "quarterly", "yearly"].map((freq) => (
                       <label
                         key={freq}
-                        className="flex items-center gap-2 text-sm text-slate-700 capitalize cursor-pointer"
+                        className="flex items-center gap-1.5 text-xs text-slate-700 capitalize cursor-pointer font-medium"
                       >
                         <input
                           type="radio"
@@ -575,12 +670,46 @@ export default function CustomersPage() {
                           onChange={(e) =>
                             setForm((f) => ({ ...f, billingType: e.target.value }))
                           }
-                          className="accent-primary h-4 w-4"
+                          className="accent-primary h-3.5 w-3.5"
                         />
                         <span>{freq}</span>
                       </label>
                     ))}
                   </div>
+                </div>
+
+                <div>
+                  <Label className="text-xs font-semibold text-slate-700 mb-2 block">
+                    Billing Start Date
+                  </Label>
+                  <Input
+                    type="date"
+                    className="mt-1 bg-white text-sm"
+                    value={form.billingStartDate}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, billingStartDate: e.target.value }))
+                    }
+                  />
+                  {form.billingStartDate && (
+                    <p className="text-[11px] text-slate-500 mt-1.5">
+                      Next bill:{" "}
+                      <span className="text-primary font-semibold">
+                        {(() => {
+                          const d = new Date(form.billingStartDate);
+                          if (form.billingType === "quarterly")
+                            d.setMonth(d.getMonth() + 3);
+                          else if (form.billingType === "yearly")
+                            d.setFullYear(d.getFullYear() + 1);
+                          else d.setMonth(d.getMonth() + 1);
+                          return d.toLocaleDateString("en-IN", {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                          });
+                        })()}
+                      </span>
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -590,7 +719,7 @@ export default function CustomersPage() {
               <div className="flex items-center justify-between border-b border-slate-200/60 pb-2">
                 <div className="flex items-center gap-2 font-semibold text-slate-800 text-sm">
                   <Layers className="h-4 w-4 text-amber-600" />
-                  <span>Assigned Services</span>
+                  <span>Assigned Services & Rates</span>
                 </div>
                 <Button
                   type="button"
@@ -698,6 +827,19 @@ export default function CustomersPage() {
                       </div>
                     </div>
                   ))}
+
+                  <div className="flex justify-end p-2 bg-slate-50 rounded-lg text-xs font-medium text-slate-700">
+                    Total Periodic Amount:{" "}
+                    <span className="font-bold text-primary ml-1">
+                      {formatCurrency(
+                        form.services.reduce(
+                          (acc, s) =>
+                            acc + (Number(s.rate) || 0) * (Number(s.units) || 1),
+                          0
+                        )
+                      )}
+                    </span>
+                  </div>
                 </div>
               )}
             </div>
@@ -742,7 +884,7 @@ export default function CustomersPage() {
 
       {/* View Client Details Modal */}
       <Dialog open={viewOpen} onOpenChange={setViewOpen}>
-        <DialogContent className="max-w-xl max-h-[85vh] flex flex-col p-0 overflow-hidden shadow-2xl">
+        <DialogContent className="max-w-2xl max-h-[88vh] flex flex-col p-0 overflow-hidden shadow-2xl">
           <DialogHeader className="px-6 py-4 border-b border-slate-100 bg-slate-50/80 shrink-0">
             <div className="flex items-center justify-between pr-6">
               <div className="flex items-center gap-2">
@@ -764,36 +906,78 @@ export default function CustomersPage() {
             </div>
           </DialogHeader>
 
-          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4 text-sm bg-white">
-            <div className="grid grid-cols-2 gap-3 p-3.5 bg-slate-50 rounded-lg border border-slate-100">
+          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5 text-sm bg-white">
+            {/* Contact & Tax Details */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3.5 bg-slate-50 rounded-lg border border-slate-100">
               <div>
-                <span className="text-xs text-slate-400 block">Mobile</span>
-                <span className="font-medium text-slate-800 flex items-center gap-1.5 mt-0.5">
+                <span className="text-[11px] text-slate-400 block uppercase font-medium">
+                  Mobile
+                </span>
+                <span className="font-medium text-slate-800 flex items-center gap-1 mt-0.5 text-xs">
                   <Phone className="h-3.5 w-3.5 text-slate-400" />
                   {viewCustomer?.mobile || "-"}
                 </span>
               </div>
               <div>
-                <span className="text-xs text-slate-400 block">Email</span>
-                <span className="font-medium text-slate-800 flex items-center gap-1.5 mt-0.5">
+                <span className="text-[11px] text-slate-400 block uppercase font-medium">
+                  Email
+                </span>
+                <span className="font-medium text-slate-800 flex items-center gap-1 mt-0.5 text-xs">
                   <Mail className="h-3.5 w-3.5 text-slate-400" />
                   {viewCustomer?.email || "-"}
                 </span>
               </div>
               <div>
-                <span className="text-xs text-slate-400 block">GSTIN</span>
-                <span className="font-mono font-medium text-slate-800 mt-0.5 block">
+                <span className="text-[11px] text-slate-400 block uppercase font-medium">
+                  GSTIN
+                </span>
+                <span className="font-mono font-medium text-slate-800 mt-0.5 block text-xs">
                   {viewCustomer?.gstin || "-"}
                 </span>
               </div>
               <div>
-                <span className="text-xs text-slate-400 block">PAN</span>
-                <span className="font-mono font-medium text-slate-800 mt-0.5 block">
+                <span className="text-[11px] text-slate-400 block uppercase font-medium">
+                  PAN
+                </span>
+                <span className="font-mono font-medium text-slate-800 mt-0.5 block text-xs">
                   {viewCustomer?.pan || "-"}
                 </span>
               </div>
             </div>
 
+            {/* Billing Schedule Summary */}
+            <div className="p-3.5 rounded-lg border border-indigo-100 bg-indigo-50/50 space-y-2">
+              <span className="text-xs font-bold text-indigo-900 uppercase tracking-wide flex items-center gap-1.5">
+                <Calendar className="h-4 w-4 text-indigo-600" />
+                Billing Schedule & Preferences
+              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs pt-1">
+                <div>
+                  <span className="text-slate-500 block">Frequency:</span>
+                  <span className="font-semibold text-slate-800 capitalize">
+                    {viewCustomer?.billingType || "Monthly"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block">Start Date:</span>
+                  <span className="font-semibold text-slate-800">
+                    {viewCustomer?.billingStartDate
+                      ? formatDate(viewCustomer.billingStartDate)
+                      : "-"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block">Next Billing Date:</span>
+                  <span className="font-semibold text-primary">
+                    {viewCustomer?.nextBillingDate
+                      ? formatDate(viewCustomer.nextBillingDate)
+                      : "-"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Address */}
             <div>
               <span className="text-xs font-semibold text-slate-700 block mb-1">
                 Address
@@ -810,17 +994,7 @@ export default function CustomersPage() {
               </p>
             </div>
 
-            {Boolean(viewCustomer?.notes) && (
-              <div>
-                <span className="text-xs font-semibold text-slate-700 block mb-1">
-                  Notes
-                </span>
-                <p className="text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-100 text-xs">
-                  {viewCustomer?.notes}
-                </p>
-              </div>
-            )}
-
+            {/* Assigned Services */}
             {Array.isArray(viewCustomer?.services) &&
               viewCustomer.services.length > 0 && (
                 <div>
@@ -842,13 +1016,67 @@ export default function CustomersPage() {
                           )}
                         </div>
                         <span className="font-semibold text-slate-800">
-                          ₹{s.rate} × {s.units}
+                          ₹{s.rate} × {s.units} ={" "}
+                          {formatCurrency(
+                            (Number(s.rate) || 0) * (Number(s.units) || 1)
+                          )}
                         </span>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
+
+            {/* Invoices / Bills for this client */}
+            <div>
+              <span className="text-xs font-semibold text-slate-700 block mb-2 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Receipt className="h-4 w-4 text-slate-500" />
+                  Client Invoices & Bills ({viewCustomerBills.length})
+                </span>
+              </span>
+              {viewCustomerBills.length === 0 ? (
+                <div className="p-3 text-center text-xs text-slate-400 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+                  No invoices generated yet for this client.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-44 overflow-y-auto">
+                  {viewCustomerBills.map((bill) => (
+                    <div
+                      key={bill._id}
+                      className="flex items-center justify-between p-2.5 bg-slate-50 rounded-lg border border-slate-100 text-xs"
+                    >
+                      <div>
+                        <span className="font-mono font-semibold text-slate-800">
+                          {bill.invoiceNumber}
+                        </span>
+                        <div className="text-[11px] text-slate-500">
+                          {bill.billingMonth} {bill.billingYear} • Due:{" "}
+                          {formatDate(bill.dueDate)}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="font-semibold text-slate-900">
+                          {formatCurrency(bill.grandTotal)}
+                        </span>
+                        <Badge
+                          variant={
+                            bill.status === "paid"
+                              ? "success"
+                              : bill.status === "unpaid"
+                              ? "warning"
+                              : "default"
+                          }
+                          className="capitalize text-[11px]"
+                        >
+                          {bill.status}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <DialogFooter className="px-6 py-3 border-t border-slate-200 bg-slate-50/90 shrink-0 flex items-center justify-between">

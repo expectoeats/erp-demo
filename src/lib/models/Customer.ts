@@ -1,5 +1,12 @@
 import mongoose, { Schema, Document, Model } from "mongoose";
 
+export interface ICustomerService {
+  type: string;
+  rate: number;
+  units: number;
+  description?: string;
+}
+
 export interface ICustomer extends Document {
   customerId: string;
   name: string;
@@ -11,12 +18,27 @@ export interface ICustomer extends Document {
   state?: string;
   city?: string;
   pincode?: string;
+  billingLocationId?: mongoose.Types.ObjectId;
+  billingType?: "monthly" | "quarterly" | "yearly";
+  billingStartDate?: Date;
+  nextBillingDate?: Date;
+  services?: ICustomerService[];
   isActive: boolean;
   notes?: string;
   createdBy: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
+
+const CustomerServiceSchema = new Schema<ICustomerService>(
+  {
+    type: { type: String, required: true },
+    rate: { type: Number, default: 0 },
+    units: { type: Number, default: 1 },
+    description: { type: String, trim: true },
+  },
+  { _id: false }
+);
 
 const CustomerSchema = new Schema<ICustomer>(
   {
@@ -30,6 +52,15 @@ const CustomerSchema = new Schema<ICustomer>(
     state: { type: String, trim: true },
     city: { type: String, trim: true },
     pincode: { type: String, trim: true },
+    billingLocationId: { type: Schema.Types.ObjectId, ref: "Location" },
+    billingType: {
+      type: String,
+      enum: ["monthly", "quarterly", "yearly"],
+      default: "monthly",
+    },
+    billingStartDate: { type: Date },
+    nextBillingDate: { type: Date },
+    services: [CustomerServiceSchema],
     isActive: { type: Boolean, default: true },
     notes: { type: String, trim: true },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
