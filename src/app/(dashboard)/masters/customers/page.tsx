@@ -33,6 +33,9 @@ import {
   Receipt,
   CheckCircle2,
   Clock,
+  Zap,
+  Gauge,
+  Calculator,
 } from "lucide-react";
 import { useDebounce } from "@/hooks/use-debounce";
 import { generateClientReportPDF } from "@/lib/utils/client-report";
@@ -42,6 +45,9 @@ interface CustomerService {
   type: string;
   rate: number;
   units: number;
+  calculationMode?: "reading" | "direct";
+  initialReading?: number;
+  currentReading?: number;
   description?: string;
 }
 
@@ -117,6 +123,32 @@ const serviceTypes = [
   { value: "others", label: "Others" },
 ];
 
+function getServiceUnitsAndAmount(s: CustomerService): {
+  units: number;
+  amount: number;
+  readingDiff?: number;
+} {
+  const isElectricity = (s.type || "").toLowerCase() === "electricity";
+  let units = Number(s.units) || 0;
+  let readingDiff: number | undefined = undefined;
+
+  if (isElectricity && s.calculationMode !== "direct") {
+    const init = Number(s.initialReading) || 0;
+    const curr = Number(s.currentReading) || 0;
+    units = Math.max(0, curr - init);
+    readingDiff = units;
+  }
+  const amount = (Number(s.rate) || 0) * units;
+  return { units, amount, readingDiff };
+}
+
+function calculateTotalServiceAmount(services: CustomerService[] = []): number {
+  return services.reduce((acc, s) => {
+    const { amount } = getServiceUnitsAndAmount(s);
+    return acc + amount;
+  }, 0);
+}
+
 export default function CustomersPage() {
   const [data, setData] = useState<Customer[]>([]);
   const [total, setTotal] = useState(0);
@@ -187,6 +219,20 @@ export default function CustomersPage() {
       ? new Date(c.billingStartDate).toISOString().split("T")[0]
       : new Date().toISOString().split("T")[0];
 
+    const formattedServices: CustomerService[] = Array.isArray(c.services)
+      ? c.services.map((s) => ({
+          type: (s.type || "maintenance").toLowerCase(),
+          rate: Number(s.rate) || 0,
+          units: Number(s.units) || 1,
+          calculationMode:
+            s.calculationMode ||
+            ((s.type || "").toLowerCase() === "electricity" ? "reading" : "direct"),
+          initialReading: Number(s.initialReading) || 0,
+          currentReading: Number(s.currentReading) || 0,
+          description: s.description || "",
+        }))
+      : [];
+
     setForm({
       name: c.name || "",
       mobile: c.mobile || "",
@@ -201,7 +247,7 @@ export default function CustomersPage() {
       billingType: c.billingType || "monthly",
       billingLocationId: locId,
       billingStartDate: startDate,
-      services: Array.isArray(c.services) ? c.services : [],
+      services: formattedServices,
     });
     setOpen(true);
   }
@@ -325,7 +371,14 @@ export default function CustomersPage() {
       ...prev,
       services: [
         ...prev.services,
-        { type: "maintenance", rate: 0, units: 1 },
+        {
+          type: "maintenance",
+          rate: 0,
+          units: 1,
+          calculationMode: "direct",
+          initialReading: 0,
+          currentReading: 0,
+        },
       ],
     }));
   };
@@ -337,7 +390,17 @@ export default function CustomersPage() {
   ) => {
     setForm((prev) => {
       const services = [...prev.services];
-      services[index] = { ...services[index], [field]: value };
+      const currentService = { ...services[index], [field]: value };
+
+      if (field === "type") {
+        const typeStr = String(value).toLowerCase();
+        currentService.type = typeStr;
+        if (typeStr === "electricity") {
+          currentService.calculationMode = currentService.calculationMode || "reading";
+        }
+      }
+
+      services[index] = currentService;
       return { ...prev, services };
     });
   };
@@ -374,10 +437,7 @@ export default function CustomersPage() {
       label: "Billing Cycle",
       render: (v, row) => {
         const item = row as unknown as Customer;
-        const totalServices = (item.services || []).reduce(
-          (acc, s) => acc + (Number(s.rate) || 0) * (Number(s.units) || 1),
-          0
-        );
+        const totalServices = calculateTotalServiceAmount(item.services || []);
         return (
           <div>
             <div className="capitalize font-medium text-slate-800 flex items-center gap-1.5">
@@ -486,7 +546,7 @@ export default function CustomersPage() {
 
       {/* Add / Edit Client Dialog */}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden shadow-2xl">
+        <DialogContent className="max-w-3xl max-h-[92vh] flex flex-col p-0 gap-0 overflow-hidden shadow-2xl">
           {/* Fixed Header */}
           <DialogHeader className="px-6 py-4 border-b border-slate-100 bg-slate-50/80 shrink-0">
             <div className="flex items-center gap-2">
@@ -505,7 +565,7 @@ export default function CustomersPage() {
           </DialogHeader>
 
           {/* Scrollable Form Body */}
-          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6 bg-white">
+          <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 space-y-6 bg-white">
             {/* Section 1: Basic Information */}
             <div className="rounded-xl border border-slate-200/80 bg-slate-50/40 p-4 space-y-4">
               <div className="flex items-center gap-2 font-semibold text-slate-800 text-sm border-b border-slate-200/60 pb-2">
@@ -726,7 +786,7 @@ export default function CustomersPage() {
                   size="sm"
                   variant="outline"
                   onClick={addServiceRow}
-                  className="h-7 text-xs bg-white"
+                  className="h-7 text-xs bg-white shadow-2xs"
                 >
                   <Plus className="h-3.5 w-3.5 mr-1" /> Add Service Row
                 </Button>
@@ -749,95 +809,362 @@ export default function CustomersPage() {
                   </Button>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {form.services.map((service, index) => (
-                    <div
-                      key={index}
-                      className="p-3.5 rounded-lg border border-slate-200 bg-white shadow-xs space-y-3"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold text-slate-600">
-                          Service #{index + 1}
-                        </span>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          className="text-rose-500 hover:text-rose-700 hover:bg-rose-50"
-                          onClick={() => handleServiceRemove(index)}
-                          title="Remove service"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
+                <div className="space-y-4">
+                  {form.services.map((service, index) => {
+                    const isElectricity =
+                      (service.type || "").toLowerCase() === "electricity";
+                    const isReadingMode =
+                      isElectricity && service.calculationMode !== "direct";
+                    const { units: calculatedUnits, amount: calculatedAmount } =
+                      getServiceUnitsAndAmount(service);
 
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div>
-                          <Label className="text-xs text-slate-600">Service Type</Label>
-                          <select
-                            value={service.type}
-                            onChange={(e) =>
-                              handleServiceChange(index, "type", e.target.value)
-                            }
-                            className="mt-1 w-full h-9 border border-slate-200 rounded-md px-2.5 text-xs bg-white focus:ring-2 focus:ring-primary/20"
+                    return (
+                      <div
+                        key={index}
+                        className={`p-4 rounded-xl border transition-all ${
+                          isElectricity
+                            ? "border-amber-300 bg-amber-50/30 shadow-xs"
+                            : "border-slate-200 bg-white shadow-xs"
+                        } space-y-3`}
+                      >
+                        {/* Service Row Header */}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            {isElectricity ? (
+                              <div className="p-1 rounded bg-amber-500 text-white">
+                                <Zap className="h-3.5 w-3.5" />
+                              </div>
+                            ) : (
+                              <div className="p-1 rounded bg-slate-100 text-slate-500">
+                                <Layers className="h-3.5 w-3.5" />
+                              </div>
+                            )}
+                            <span className="text-xs font-bold text-slate-800">
+                              Service #{index + 1}:{" "}
+                              <span className="capitalize font-semibold text-primary">
+                                {service.type || "Service"}
+                              </span>
+                            </span>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            className="text-rose-500 hover:text-rose-700 hover:bg-rose-50"
+                            onClick={() => handleServiceRemove(index)}
+                            title="Remove service"
                           >
-                            {serviceTypes.map((st) => (
-                              <option key={st.value} value={st.value}>
-                                {st.label}
-                              </option>
-                            ))}
-                          </select>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
-                        <div>
-                          <Label className="text-xs text-slate-600">Rate (₹)</Label>
-                          <Input
-                            type="number"
-                            min="0"
-                            step="any"
-                            className="mt-1 h-9 text-xs"
-                            value={service.rate}
-                            onChange={(e) =>
-                              handleServiceChange(
-                                index,
-                                "rate",
-                                parseFloat(e.target.value) || 0
-                              )
-                            }
-                            placeholder="0.00"
-                          />
-                        </div>
-                        <div>
-                          <Label className="text-xs text-slate-600">Units</Label>
-                          <Input
-                            type="number"
-                            min="0"
-                            step="any"
-                            className="mt-1 h-9 text-xs"
-                            value={service.units}
-                            onChange={(e) =>
-                              handleServiceChange(
-                                index,
-                                "units",
-                                parseFloat(e.target.value) || 0
-                              )
-                            }
-                            placeholder="1"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
 
-                  <div className="flex justify-end p-2 bg-slate-50 rounded-lg text-xs font-medium text-slate-700">
+                        {/* Top: Service Type Selector */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div>
+                            <Label className="text-xs text-slate-700 font-semibold">
+                              Service Type
+                            </Label>
+                            <select
+                              value={(service.type || "maintenance").toLowerCase()}
+                              onChange={(e) =>
+                                handleServiceChange(index, "type", e.target.value)
+                              }
+                              className="mt-1 w-full h-9 border border-slate-200 rounded-md px-2.5 text-xs bg-white focus:ring-2 focus:ring-primary/20 font-medium capitalize"
+                            >
+                              {serviceTypes.map((st) => (
+                                <option key={st.value} value={st.value}>
+                                  {st.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* Standard Rate & Units for non-electricity services */}
+                          {!isElectricity && (
+                            <>
+                              <div>
+                                <Label className="text-xs text-slate-700 font-semibold">
+                                  Rate (₹)
+                                </Label>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="any"
+                                  className="mt-1 h-9 text-xs bg-white"
+                                  value={service.rate || ""}
+                                  onChange={(e) =>
+                                    handleServiceChange(
+                                      index,
+                                      "rate",
+                                      parseFloat(e.target.value) || 0
+                                    )
+                                  }
+                                  placeholder="0.00"
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs text-slate-700 font-semibold">
+                                  Units / Quantity
+                                </Label>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="any"
+                                  className="mt-1 h-9 text-xs bg-white"
+                                  value={service.units || ""}
+                                  onChange={(e) =>
+                                    handleServiceChange(
+                                      index,
+                                      "units",
+                                      parseFloat(e.target.value) || 0
+                                    )
+                                  }
+                                  placeholder="1"
+                                />
+                              </div>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Dedicated Electricity Dual Calculation Mode UI */}
+                        {isElectricity && (
+                          <div className="space-y-3 pt-2 border-t border-amber-200/80">
+                            <div>
+                              <Label className="text-xs font-bold text-amber-950 block mb-1.5 flex items-center gap-1.5">
+                                <Calculator className="h-3.5 w-3.5 text-amber-600" />
+                                Electricity Calculation Mode (Select Option):
+                              </Label>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 bg-white p-2 rounded-xl border border-amber-200 shadow-2xs">
+                                <label
+                                  className={`flex items-start gap-2.5 p-2.5 rounded-lg text-xs cursor-pointer border transition-all ${
+                                    isReadingMode
+                                      ? "bg-amber-50/80 border-amber-400 text-amber-950 ring-1 ring-amber-300"
+                                      : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                                  }`}
+                                >
+                                  <input
+                                    type="radio"
+                                    name={`elec-mode-${index}`}
+                                    value="reading"
+                                    checked={isReadingMode}
+                                    onChange={() =>
+                                      handleServiceChange(
+                                        index,
+                                        "calculationMode",
+                                        "reading"
+                                      )
+                                    }
+                                    className="accent-amber-600 h-4 w-4 mt-0.5 shrink-0"
+                                  />
+                                  <div>
+                                    <div className="font-bold flex items-center gap-1">
+                                      <Gauge className="h-3.5 w-3.5 text-amber-600" />
+                                      <span>Mode 1: Meter Reading Difference</span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                                      Subtracts initial start reading so client only pays for actual usage during their period.
+                                    </p>
+                                  </div>
+                                </label>
+
+                                <label
+                                  className={`flex items-start gap-2.5 p-2.5 rounded-lg text-xs cursor-pointer border transition-all ${
+                                    !isReadingMode
+                                      ? "bg-amber-50/80 border-amber-400 text-amber-950 ring-1 ring-amber-300"
+                                      : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                                  }`}
+                                >
+                                  <input
+                                    type="radio"
+                                    name={`elec-mode-${index}`}
+                                    value="direct"
+                                    checked={!isReadingMode}
+                                    onChange={() =>
+                                      handleServiceChange(
+                                        index,
+                                        "calculationMode",
+                                        "direct"
+                                      )
+                                    }
+                                    className="accent-amber-600 h-4 w-4 mt-0.5 shrink-0"
+                                  />
+                                  <div>
+                                    <div className="font-bold flex items-center gap-1">
+                                      <Zap className="h-3.5 w-3.5 text-amber-600" />
+                                      <span>Mode 2: Direct Consumed Units</span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                                      Direct input of exact consumed units and rate per unit.
+                                    </p>
+                                  </div>
+                                </label>
+                              </div>
+                            </div>
+
+                            {/* Mode 1 Inputs: Meter Reading Difference */}
+                            {isReadingMode ? (
+                              <div className="p-3.5 bg-white rounded-xl border border-amber-200/90 shadow-2xs space-y-3">
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                  <div>
+                                    <Label className="text-xs text-slate-700 font-semibold">
+                                      Initial / Start Reading (kWh)
+                                    </Label>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      step="any"
+                                      className="mt-1 h-9 text-xs"
+                                      value={service.initialReading || ""}
+                                      onChange={(e) =>
+                                        handleServiceChange(
+                                          index,
+                                          "initialReading",
+                                          parseFloat(e.target.value) || 0
+                                        )
+                                      }
+                                      placeholder="e.g. 1200"
+                                    />
+                                    <span className="text-[10px] text-slate-400 mt-0.5 block">
+                                      Pre-existing meter reading
+                                    </span>
+                                  </div>
+
+                                  <div>
+                                    <Label className="text-xs text-slate-700 font-semibold">
+                                      Current / Final Reading (kWh)
+                                    </Label>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      step="any"
+                                      className="mt-1 h-9 text-xs"
+                                      value={service.currentReading || ""}
+                                      onChange={(e) =>
+                                        handleServiceChange(
+                                          index,
+                                          "currentReading",
+                                          parseFloat(e.target.value) || 0
+                                        )
+                                      }
+                                      placeholder="e.g. 1350"
+                                    />
+                                    <span className="text-[10px] text-slate-400 mt-0.5 block">
+                                      Total reading after period
+                                    </span>
+                                  </div>
+
+                                  <div>
+                                    <Label className="text-xs text-slate-700 font-semibold">
+                                      Rate per Unit (₹/kWh)
+                                    </Label>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      step="any"
+                                      className="mt-1 h-9 text-xs"
+                                      value={service.rate || ""}
+                                      onChange={(e) =>
+                                        handleServiceChange(
+                                          index,
+                                          "rate",
+                                          parseFloat(e.target.value) || 0
+                                        )
+                                      }
+                                      placeholder="e.g. 8.00"
+                                    />
+                                    <span className="text-[10px] text-slate-400 mt-0.5 block">
+                                      Unit charge in Rupees
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="p-2.5 bg-amber-50 rounded-lg border border-amber-200 text-xs flex flex-wrap items-center justify-between gap-2">
+                                  <div className="text-amber-950">
+                                    <span className="font-semibold">Client&apos;s Electricity Usage:</span>{" "}
+                                    <span className="font-mono font-bold">
+                                      {service.currentReading || 0} - {service.initialReading || 0} ={" "}
+                                      <span className="text-primary text-sm font-extrabold">{calculatedUnits} kWh</span>
+                                    </span>
+                                  </div>
+                                  <div className="font-bold text-slate-900">
+                                    Total Amount:{" "}
+                                    <span className="text-primary font-mono text-sm ml-1">
+                                      {formatCurrency(calculatedAmount)}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
+                              /* Mode 2 Inputs: Direct Consumed Units */
+                              <div className="p-3.5 bg-white rounded-xl border border-amber-200/90 shadow-2xs space-y-3">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  <div>
+                                    <Label className="text-xs text-slate-700 font-semibold">
+                                      Direct Consumed Units (kWh)
+                                    </Label>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      step="any"
+                                      className="mt-1 h-9 text-xs"
+                                      value={service.units || ""}
+                                      onChange={(e) =>
+                                        handleServiceChange(
+                                          index,
+                                          "units",
+                                          parseFloat(e.target.value) || 0
+                                        )
+                                      }
+                                      placeholder="e.g. 20"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <Label className="text-xs text-slate-700 font-semibold">
+                                      Rate per Unit (₹/kWh)
+                                    </Label>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      step="any"
+                                      className="mt-1 h-9 text-xs"
+                                      value={service.rate || ""}
+                                      onChange={(e) =>
+                                        handleServiceChange(
+                                          index,
+                                          "rate",
+                                          parseFloat(e.target.value) || 0
+                                        )
+                                      }
+                                      placeholder="e.g. 5.00"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="p-2.5 bg-amber-50 rounded-lg border border-amber-200 text-xs flex items-center justify-between">
+                                  <span className="text-amber-950 font-medium">
+                                    Formula: {service.units || 0} kWh × ₹{service.rate || 0}
+                                  </span>
+                                  <span className="font-bold text-slate-900">
+                                    Total Amount:{" "}
+                                    <span className="text-primary font-mono text-sm ml-1">
+                                      {formatCurrency(calculatedAmount)}
+                                    </span>
+                                  </span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  <div className="flex justify-end p-3 bg-slate-100 rounded-xl text-xs font-medium text-slate-700">
                     Total Periodic Amount:{" "}
-                    <span className="font-bold text-primary ml-1">
-                      {formatCurrency(
-                        form.services.reduce(
-                          (acc, s) =>
-                            acc + (Number(s.rate) || 0) * (Number(s.units) || 1),
-                          0
-                        )
-                      )}
+                    <span className="font-bold text-primary ml-1 text-base">
+                      {formatCurrency(calculateTotalServiceAmount(form.services))}
                     </span>
                   </div>
                 </div>
@@ -846,7 +1173,7 @@ export default function CustomersPage() {
           </div>
 
           {/* Fixed Footer with Visible Buttons */}
-          <DialogFooter className="px-6 py-3.5 border-t border-slate-200 bg-slate-50/90 shrink-0 flex items-center justify-between gap-2.5">
+          <DialogFooter className="px-6 py-3.5 border-t border-slate-200 bg-slate-50/90 shrink-0 flex flex-wrap items-center justify-between gap-2.5">
             <Button
               type="button"
               variant="outline"
@@ -906,7 +1233,7 @@ export default function CustomersPage() {
             </div>
           </DialogHeader>
 
-          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5 text-sm bg-white">
+          <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 space-y-5 text-sm bg-white">
             {/* Contact & Tax Details */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3.5 bg-slate-50 rounded-lg border border-slate-100">
               <div>
@@ -922,9 +1249,9 @@ export default function CustomersPage() {
                 <span className="text-[11px] text-slate-400 block uppercase font-medium">
                   Email
                 </span>
-                <span className="font-medium text-slate-800 flex items-center gap-1 mt-0.5 text-xs">
-                  <Mail className="h-3.5 w-3.5 text-slate-400" />
-                  {viewCustomer?.email || "-"}
+                <span className="font-medium text-slate-800 flex items-center gap-1 mt-0.5 text-xs truncate">
+                  <Mail className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                  <span className="truncate">{viewCustomer?.email || "-"}</span>
                 </span>
               </div>
               <div>
@@ -1001,28 +1328,59 @@ export default function CustomersPage() {
                   <span className="text-xs font-semibold text-slate-700 block mb-2">
                     Assigned Services ({viewCustomer.services.length})
                   </span>
-                  <div className="space-y-2">
-                    {viewCustomer.services.map((s, idx) => (
-                      <div
-                        key={idx}
-                        className="flex items-center justify-between p-2.5 bg-slate-50 rounded-lg border border-slate-100 text-xs"
-                      >
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="capitalize">
-                            {s.type}
-                          </Badge>
-                          {s.description && (
-                            <span className="text-slate-600">{s.description}</span>
+                  <div className="space-y-2.5">
+                    {viewCustomer.services.map((s, idx) => {
+                      const { units: calculatedUnits, amount: calculatedAmount } =
+                        getServiceUnitsAndAmount(s);
+                      const isElectricity =
+                        (s.type || "").toLowerCase() === "electricity";
+                      const isReadingMode =
+                        isElectricity && s.calculationMode !== "direct";
+
+                      return (
+                        <div
+                          key={idx}
+                          className="p-3 bg-slate-50 rounded-lg border border-slate-100 text-xs space-y-1"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Badge
+                                variant={isElectricity ? "warning" : "outline"}
+                                className="capitalize text-[11px]"
+                              >
+                                {s.type}
+                              </Badge>
+                              {isReadingMode && (
+                                <span className="text-[11px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded font-medium border border-amber-200">
+                                  Meter Reading Diff
+                                </span>
+                              )}
+                            </div>
+                            <span className="font-bold text-slate-900 text-xs font-mono">
+                              {formatCurrency(calculatedAmount)}
+                            </span>
+                          </div>
+
+                          {isReadingMode ? (
+                            <div className="text-[11px] text-slate-600 flex flex-wrap items-center justify-between gap-1 pt-1">
+                              <span>
+                                Reading: {s.currentReading || 0} - {s.initialReading || 0} ={" "}
+                                <strong className="text-slate-800">{calculatedUnits} kWh</strong>
+                              </span>
+                              <span>
+                                Rate: ₹{s.rate}/kWh
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="text-[11px] text-slate-600 flex items-center justify-between pt-1">
+                              <span>
+                                Rate: ₹{s.rate} × {calculatedUnits} {isElectricity ? "kWh" : "units"}
+                              </span>
+                            </div>
                           )}
                         </div>
-                        <span className="font-semibold text-slate-800">
-                          ₹{s.rate} × {s.units} ={" "}
-                          {formatCurrency(
-                            (Number(s.rate) || 0) * (Number(s.units) || 1)
-                          )}
-                        </span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}

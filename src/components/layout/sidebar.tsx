@@ -4,9 +4,9 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import Image from "next/image";
 import {
   LayoutDashboard,
+  MapPin,
   Users,
   Building2,
   FileText,
@@ -30,6 +30,7 @@ import {
   ScrollText,
   PieChart,
   UserCheck,
+  X,
 } from "lucide-react";
 
 interface NavItem {
@@ -45,6 +46,7 @@ const navItems: NavItem[] = [
     label: "Masters",
     icon: Building,
     children: [
+      { label: "Locations", href: "/masters/locations", icon: MapPin },
       { label: "Clients", href: "/masters/customers", icon: Users },
       { label: "Bill Types", href: "/masters/bill-types", icon: FileText },
       { label: "Financial Years", href: "/masters/financial-years", icon: CalendarDays },
@@ -100,9 +102,10 @@ const navItems: NavItem[] = [
 interface SidebarGroupProps {
   item: NavItem;
   level?: number;
+  onNavigate?: () => void;
 }
 
-function SidebarGroup({ item, level = 0 }: SidebarGroupProps) {
+function SidebarGroup({ item, level = 0, onNavigate }: SidebarGroupProps) {
   const pathname = usePathname();
   const isChildActive = item.children?.some(
     (c) => c.href && pathname.startsWith(c.href)
@@ -132,7 +135,7 @@ function SidebarGroup({ item, level = 0 }: SidebarGroupProps) {
       {open && (
         <div className="ml-3 mt-0.5 border-l border-white/10 pl-3 flex flex-col gap-0.5">
           {item.children?.map((child) => (
-            <SidebarNavItem key={child.href} item={child} />
+            <SidebarNavItem key={child.href} item={child} onNavigate={onNavigate} />
           ))}
         </div>
       )}
@@ -140,16 +143,25 @@ function SidebarGroup({ item, level = 0 }: SidebarGroupProps) {
   );
 }
 
-function SidebarNavItem({ item }: { item: NavItem }) {
+function SidebarNavItem({
+  item,
+  onNavigate,
+}: {
+  item: NavItem;
+  onNavigate?: () => void;
+}) {
   const pathname = usePathname();
-  const isActive = item.href ? pathname === item.href || pathname.startsWith(item.href + "/") : false;
+  const isActive = item.href
+    ? pathname === item.href || pathname.startsWith(item.href + "/")
+    : false;
   const Icon = item.icon;
 
-  if (item.children) return <SidebarGroup item={item} />;
+  if (item.children) return <SidebarGroup item={item} onNavigate={onNavigate} />;
 
   return (
     <Link
       href={item.href!}
+      onClick={onNavigate}
       className={cn(
         "flex items-center gap-2.5 px-3 py-1.5 rounded-md text-sm transition-colors",
         isActive
@@ -163,34 +175,54 @@ function SidebarNavItem({ item }: { item: NavItem }) {
   );
 }
 
-export function Sidebar() {
+interface SidebarProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+}
+
+export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   return (
-    <aside className="fixed left-0 top-0 h-full w-56 sidebar-bg flex flex-col z-30 border-r sidebar-border">
-      {/* Logo */}
-      <div className="h-14 flex items-center px-4 border-b sidebar-border shrink-0">
-        <Link href="/dashboard" className="flex items-center gap-2.5">
-          <div className="h-8 w-8 rounded-lg overflow-hidden flex items-center justify-center bg-white shrink-0 p-0.5 shadow-xs">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/logo.jpeg"
-              alt="PropertyERP Logo"
-              className="h-full w-full object-contain rounded-md"
-            />
-          </div>
-          <div>
-            <div className="text-sm font-bold text-white leading-none tracking-tight">PropertyERP</div>
-            <div className="text-[10px] sidebar-muted mt-0.5">Management System</div>
-          </div>
+    <aside
+      className={cn(
+        "fixed left-0 top-0 h-full w-56 sidebar-bg flex flex-col z-40 border-r sidebar-border transition-transform duration-200 ease-in-out",
+        isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+      )}
+    >
+      {/* Header - Display ONLY logo, centered with transparent background */}
+      <div className="h-16 flex items-center justify-between px-4 border-b sidebar-border shrink-0">
+        <Link
+          href="/dashboard"
+          onClick={onClose}
+          className="flex-1 flex items-center justify-center"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logo.jpeg"
+            alt="Logo"
+            className="h-11 w-auto max-w-[170px] object-contain rounded"
+          />
         </Link>
+
+        {/* Mobile close button */}
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="md:hidden p-1.5 rounded-md text-white/70 hover:text-white hover:bg-white/10 ml-2"
+            aria-label="Close Sidebar"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        )}
       </div>
 
-      {/* Nav */}
+      {/* Nav List */}
       <nav className="flex-1 overflow-y-auto scrollbar-thin py-3 px-2 flex flex-col gap-0.5">
         {navItems.map((item) =>
           item.children ? (
-            <SidebarGroup key={item.label} item={item} />
+            <SidebarGroup key={item.label} item={item} onNavigate={onClose} />
           ) : (
-            <SidebarNavItem key={item.href} item={item} />
+            <SidebarNavItem key={item.href} item={item} onNavigate={onClose} />
           )
         )}
       </nav>

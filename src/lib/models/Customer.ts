@@ -4,6 +4,9 @@ export interface ICustomerService {
   type: string;
   rate: number;
   units: number;
+  calculationMode?: "reading" | "direct";
+  initialReading?: number;
+  currentReading?: number;
   description?: string;
 }
 
@@ -35,6 +38,13 @@ const CustomerServiceSchema = new Schema<ICustomerService>(
     type: { type: String, required: true },
     rate: { type: Number, default: 0 },
     units: { type: Number, default: 1 },
+    calculationMode: {
+      type: String,
+      enum: ["reading", "direct"],
+      default: "direct",
+    },
+    initialReading: { type: Number, default: 0 },
+    currentReading: { type: Number, default: 0 },
     description: { type: String, trim: true },
   },
   { _id: false }

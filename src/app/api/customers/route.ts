@@ -14,6 +14,9 @@ const serviceItemSchema = z.object({
   type: z.string().min(1),
   rate: z.number().default(0),
   units: z.number().default(1),
+  calculationMode: z.enum(["reading", "direct"]).optional(),
+  initialReading: z.number().optional(),
+  currentReading: z.number().optional(),
   description: z.string().optional(),
 });
 
@@ -150,20 +153,33 @@ export async function POST(req: NextRequest) {
       const invoiceNumber = `${updatedBillType?.prefix || "INV"}/${fy.name}/${String(updatedBillType?.lastNumber || 1).padStart(6, "0")}`;
 
       const items = parsed.data.services.map((s) => {
-        const amount = (Number(s.rate) || 0) * (Number(s.units) || 1);
+        let quantity = Number(s.units) || 1;
+        let notes = s.description || "";
+
+        if (
+          s.type.toLowerCase() === "electricity" &&
+          s.calculationMode === "reading"
+        ) {
+          const init = Number(s.initialReading) || 0;
+          const curr = Number(s.currentReading) || 0;
+          quantity = Math.max(0, curr - init);
+          notes = `Meter Reading: ${curr} - ${init} = ${quantity} units (kWh)`;
+        }
+
+        const amount = (Number(s.rate) || 0) * quantity;
         return {
           serviceName: s.type,
           serviceCode: s.type.toUpperCase().slice(0, 4),
           calculationType: "FIXED",
-          quantity: Number(s.units) || 1,
-          unit: "unit",
+          quantity,
+          unit: s.type.toLowerCase() === "electricity" ? "kWh" : "unit",
           rate: Number(s.rate) || 0,
           amount,
           isTaxable: false,
           gstRate: 0,
           gstAmount: 0,
           totalAmount: amount,
-          notes: s.description || "",
+          notes,
         };
       });
 

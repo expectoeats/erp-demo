@@ -17,6 +17,9 @@ export interface ClientReportData {
     type: string;
     rate: number;
     units: number;
+    calculationMode?: "reading" | "direct";
+    initialReading?: number;
+    currentReading?: number;
     description?: string;
   }>;
   isActive?: boolean;
@@ -46,26 +49,45 @@ export function generateClientReportPDF(data: ClientReportData) {
     .join(", ");
 
   const services = data.services || [];
-  const totalServiceAmount = services.reduce(
-    (acc, curr) => acc + (Number(curr.rate) || 0) * (Number(curr.units) || 0),
-    0
-  );
+  const totalServiceAmount = services.reduce((acc, curr) => {
+    let units = Number(curr.units) || 0;
+    if (curr.type === "electricity" && curr.calculationMode === "reading") {
+      const init = Number(curr.initialReading) || 0;
+      const finalVal = Number(curr.currentReading) || 0;
+      units = Math.max(0, finalVal - init);
+    }
+    return acc + (Number(curr.rate) || 0) * units;
+  }, 0);
 
   const servicesRowsHtml =
     services.length > 0
       ? services
           .map((s, idx) => {
-            const rowTotal = (Number(s.rate) || 0) * (Number(s.units) || 0);
+            const isElec = s.type === "electricity";
+            const isReading = isElec && s.calculationMode === "reading";
+            let units = Number(s.units) || 0;
+            if (isReading) {
+              const init = Number(s.initialReading) || 0;
+              const finalVal = Number(s.currentReading) || 0;
+              units = Math.max(0, finalVal - init);
+            }
+            const rowTotal = (Number(s.rate) || 0) * units;
+            const subtitle = isReading
+              ? `<div style="font-size: 11px; color: #d97706; font-weight: normal;">Reading: ${s.currentReading || 0} - ${s.initialReading || 0} = ${units} kWh</div>`
+              : s.description
+              ? `<div style="font-size: 11px; color: #64748b; font-weight: normal;">${s.description}</div>`
+              : "";
+
             return `
               <tr>
                 <td style="text-align: center; color: #64748b; font-weight: 500;">${idx + 1}</td>
                 <td style="font-weight: 600; text-transform: capitalize; color: #1e293b;">
-                  ${s.type}
+                  ${s.type} ${subtitle}
                 </td>
                 <td style="text-align: right; font-family: monospace; color: #334155;">
                   ₹${Number(s.rate).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </td>
-                <td style="text-align: center; font-family: monospace; color: #334155;">${s.units}</td>
+                <td style="text-align: center; font-family: monospace; color: #334155;">${units} ${isElec ? "kWh" : ""}</td>
                 <td style="text-align: right; font-weight: 600; font-family: monospace; color: #0f172a;">
                   ₹${rowTotal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </td>
