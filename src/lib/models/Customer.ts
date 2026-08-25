@@ -21,6 +21,7 @@ export interface ICustomer extends Document {
   state?: string;
   city?: string;
   pincode?: string;
+  orgId?: mongoose.Types.ObjectId;
   billingLocationId?: mongoose.Types.ObjectId;
   billingType?: "monthly" | "quarterly" | "yearly";
   billingStartDate?: Date;
@@ -62,6 +63,7 @@ const CustomerSchema = new Schema<ICustomer>(
     state: { type: String, trim: true },
     city: { type: String, trim: true },
     pincode: { type: String, trim: true },
+    orgId: { type: Schema.Types.ObjectId, ref: "OrgSettings" },
     billingLocationId: { type: Schema.Types.ObjectId, ref: "Location" },
     billingType: {
       type: String,

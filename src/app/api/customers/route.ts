@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db/connection";
 import { requireAuth, requireRole, ADMIN_ROLES } from "@/lib/auth/helpers";
 import Customer from "@/lib/models/Customer";
+import OrgSettings from "@/lib/models/OrgSettings";
 import Location from "@/lib/models/Location";
 import SubLocation from "@/lib/models/SubLocation";
 import Bill from "@/lib/models/Bill";
@@ -30,6 +31,7 @@ const schema = z.object({
   state: z.string().optional(),
   city: z.string().optional(),
   pincode: z.string().optional(),
+  orgId: z.string().optional().or(z.literal("")),
   billingLocationId: z.string().optional().or(z.literal("")),
   billingType: z.enum(["monthly", "quarterly", "yearly"]).optional(),
   billingStartDate: z.string().optional().or(z.literal("")),
@@ -74,6 +76,7 @@ export async function GET(req: NextRequest) {
 
   const [data, total] = await Promise.all([
     Customer.find(query)
+      .populate("orgId", "companyName orgCode locationId")
       .populate("billingLocationId", "name locationId")
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -108,6 +111,7 @@ export async function POST(req: NextRequest) {
 
   const customerPayload = {
     ...parsed.data,
+    orgId: parsed.data.orgId ? parsed.data.orgId : undefined,
     billingLocationId: parsed.data.billingLocationId ? parsed.data.billingLocationId : undefined,
     billingStartDate: startDate,
     billingType,

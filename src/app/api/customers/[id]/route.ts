@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db/connection";
 import { requireAuth, requireRole, ADMIN_ROLES } from "@/lib/auth/helpers";
 import Customer from "@/lib/models/Customer";
+import OrgSettings from "@/lib/models/OrgSettings";
 import Location from "@/lib/models/Location";
 import SubLocation from "@/lib/models/SubLocation";
 import Unit from "@/lib/models/Unit";
@@ -26,7 +27,10 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
   const { id } = await params;
 
   const [customer, units, bills] = await Promise.all([
-    Customer.findById(id).populate("billingLocationId", "name locationId").lean(),
+    Customer.findById(id)
+      .populate("orgId", "companyName orgCode locationId")
+      .populate("billingLocationId", "name locationId")
+      .lean(),
     Unit.find({ currentOwnerId: id })
       .populate("locationId", "name")
       .populate("subLocationId", "name")
@@ -49,6 +53,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const updateData: Record<string, unknown> = { ...body };
   if (body.billingLocationId === "") {
     updateData.billingLocationId = null;
+  }
+  if (body.orgId === "") {
+    updateData.orgId = null;
   }
 
   if (body.billingStartDate) {

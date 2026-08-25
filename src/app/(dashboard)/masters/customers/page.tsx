@@ -36,6 +36,7 @@ import {
   Zap,
   Gauge,
   Calculator,
+  Building2,
 } from "lucide-react";
 import { useDebounce } from "@/hooks/use-debounce";
 import { generateClientReportPDF } from "@/lib/utils/client-report";
@@ -57,6 +58,13 @@ interface LocationRef {
   locationId?: string;
 }
 
+interface OrgRef {
+  _id: string;
+  companyName: string;
+  orgCode?: string;
+  locationId?: string | LocationRef;
+}
+
 interface Customer {
   _id: string;
   customerId: string;
@@ -71,6 +79,7 @@ interface Customer {
   pincode?: string;
   notes?: string;
   isActive: boolean;
+  orgId?: string | OrgRef;
   billingType?: "monthly" | "quarterly" | "yearly";
   billingLocationId?: string | LocationRef;
   billingStartDate?: string;
@@ -98,6 +107,14 @@ interface LocationOption {
   locationId?: string;
 }
 
+interface OrgOption {
+  _id: string;
+  companyName: string;
+  orgCode?: string;
+  locationId?: string | LocationRef;
+  isDefault?: boolean;
+}
+
 const emptyForm = {
   name: "",
   mobile: "",
@@ -109,6 +126,7 @@ const emptyForm = {
   city: "",
   pincode: "",
   notes: "",
+  orgId: "",
   billingType: "monthly",
   billingLocationId: "",
   billingStartDate: new Date().toISOString().split("T")[0],
@@ -165,6 +183,7 @@ export default function CustomersPage() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [locations, setLocations] = useState<LocationOption[]>([]);
+  const [orgs, setOrgs] = useState<OrgOption[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -186,25 +205,39 @@ export default function CustomersPage() {
     load();
   }, [load]);
 
-  // Load locations for dropdown
+  // Load locations and organisations for dropdowns
   useEffect(() => {
-    async function loadLocations() {
+    async function loadDropdowns() {
       try {
-        const res = await fetch("/api/locations?limit=100");
-        const json = await res.json();
-        if (json.data) {
-          setLocations(json.data);
-        }
+        const [locRes, orgRes] = await Promise.all([
+          fetch("/api/locations?limit=100"),
+          fetch("/api/settings/organisation"),
+        ]);
+        const locJson = await locRes.json();
+        const orgJson = await orgRes.json();
+
+        if (locJson.data) setLocations(locJson.data);
+        if (orgJson.data) setOrgs(orgJson.data);
       } catch {
-        // ignore error silently
+        // ignore silently
       }
     }
-    loadLocations();
+    loadDropdowns();
   }, []);
 
   function openAdd() {
     setEditing(null);
-    setForm(emptyForm);
+    const defaultOrg = orgs.find((o) => o.isDefault) || orgs[0];
+    const defaultLocId =
+      typeof defaultOrg?.locationId === "object" && defaultOrg?.locationId !== null
+        ? (defaultOrg.locationId as LocationRef)._id
+        : (defaultOrg?.locationId as string) || "";
+
+    setForm({
+      ...emptyForm,
+      orgId: defaultOrg?._id || "",
+      billingLocationId: defaultLocId || "",
+    });
     setOpen(true);
   }
 
@@ -214,6 +247,11 @@ export default function CustomersPage() {
       typeof c.billingLocationId === "object" && c.billingLocationId !== null
         ? (c.billingLocationId as LocationRef)._id
         : (c.billingLocationId as string) || "";
+
+    const orgId =
+      typeof c.orgId === "object" && c.orgId !== null
+        ? (c.orgId as OrgRef)._id
+        : (c.orgId as string) || "";
 
     const startDate = c.billingStartDate
       ? new Date(c.billingStartDate).toISOString().split("T")[0]
@@ -244,12 +282,27 @@ export default function CustomersPage() {
       city: c.city || "",
       pincode: c.pincode || "",
       notes: c.notes || "",
+      orgId: orgId,
       billingType: c.billingType || "monthly",
       billingLocationId: locId,
       billingStartDate: startDate,
       services: formattedServices,
     });
     setOpen(true);
+  }
+
+  function handleOrgChange(selectedOrgId: string) {
+    const selectedOrg = orgs.find((o) => o._id === selectedOrgId);
+    const mappedLocId =
+      typeof selectedOrg?.locationId === "object" && selectedOrg?.locationId !== null
+        ? (selectedOrg.locationId as LocationRef)._id
+        : (selectedOrg?.locationId as string) || "";
+
+    setForm((f) => ({
+      ...f,
+      orgId: selectedOrgId,
+      billingLocationId: mappedLocId || f.billingLocationId,
+    }));
   }
 
   async function handleView(c: Customer) {
@@ -280,6 +333,11 @@ export default function CustomersPage() {
       : typeof c.billingLocationId === "object" && c.billingLocationId !== null
       ? (c.billingLocationId as LocationRef).name
       : "";
+
+    const orgName =
+      typeof c.orgId === "object" && c.orgId !== null
+        ? (c.orgId as OrgRef).companyName
+        : orgs.find((o) => o._id === c.orgId)?.companyName || "";
 
     generateClientReportPDF({
       customerId: c.customerId,
@@ -421,16 +479,35 @@ export default function CustomersPage() {
     },
     {
       key: "name",
-      label: "Name & Contact",
-      render: (v, row) => (
-        <div>
-          <div className="font-semibold text-slate-900">{String(v || "-")}</div>
-          <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
-            <span>{String(row.mobile || "")}</span>
-            {Boolean(row.email) && <span>• {String(row.email)}</span>}
+      label: "Client & Organisation",
+      render: (v, row) => {
+        const item = row as unknown as Customer;
+        const org =
+          typeof item.orgId === "object" && item.orgId !== null
+            ? (item.orgId as OrgRef)
+            : orgs.find((o) => o._id === item.orgId);
+
+        return (
+          <div>
+            <div className="font-semibold text-slate-900 flex items-center gap-1.5">
+              <span>{String(v || "-")}</span>
+              {org && (
+                <Badge
+                  variant="outline"
+                  className="text-[10px] font-normal text-slate-600 bg-slate-50 border-slate-200"
+                >
+                  <Building2 className="h-2.5 w-2.5 mr-1 text-primary" />
+                  {org.companyName}
+                </Badge>
+              )}
+            </div>
+            <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+              <span>{String(row.mobile || "")}</span>
+              {Boolean(row.email) && <span>• {String(row.email)}</span>}
+            </div>
           </div>
-        </div>
-      ),
+        );
+      },
     },
     {
       key: "billingType",
@@ -523,7 +600,7 @@ export default function CustomersPage() {
     <div className="space-y-6">
       <PageHeader
         title="Clients"
-        description="Manage client profiles, billing start dates, frequencies, and assigned recurring services"
+        description="Manage client profiles, organization mapping, billing start dates, and recurring services"
       >
         <Button onClick={openAdd} className="shadow-sm">
           <Plus className="h-4 w-4 mr-1.5" /> Add Client
@@ -558,7 +635,7 @@ export default function CustomersPage() {
                   {editing ? `Edit Client: ${editing.name}` : "Add New Client"}
                 </DialogTitle>
                 <DialogDescription className="text-xs text-slate-500">
-                  Fill in client profile information, billing frequency, start date, and services.
+                  Fill in client profile information, serving organisation, billing frequency, and services.
                 </DialogDescription>
               </div>
             </div>
@@ -685,13 +762,36 @@ export default function CustomersPage() {
               </div>
             </div>
 
-            {/* Section 3: Billing & Preferences */}
+            {/* Section 3: Billing, Organisation & Preferences */}
             <div className="rounded-xl border border-slate-200/80 bg-slate-50/40 p-4 space-y-4">
               <div className="flex items-center gap-2 font-semibold text-slate-800 text-sm border-b border-slate-200/60 pb-2">
                 <CreditCard className="h-4 w-4 text-indigo-600" />
-                <span>Billing Preferences & Schedule</span>
+                <span>Serving Organisation & Billing Schedule</span>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Organization Selection Dropdown */}
+                <div className="md:col-span-3 p-3 rounded-lg bg-blue-50/50 border border-blue-100 space-y-1.5">
+                  <Label className="text-xs font-bold text-blue-950 flex items-center gap-1.5">
+                    <Building2 className="h-3.5 w-3.5 text-blue-600" />
+                    Serving Company / Branch Organisation
+                  </Label>
+                  <select
+                    value={form.orgId}
+                    onChange={(e) => handleOrgChange(e.target.value)}
+                    className="w-full h-10 border border-slate-200 rounded-md px-3 bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  >
+                    <option value="">-- Select Organisation / Branch --</option>
+                    {orgs.map((org) => (
+                      <option key={org._id} value={org._id}>
+                        {org.companyName} {org.orgCode ? `(${org.orgCode})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-slate-500">
+                    Links this client to the selected company branch for invoicing, tax credentials, and billing tracking.
+                  </p>
+                </div>
+
                 <div>
                   <Label className="text-xs font-semibold text-slate-700 mb-2 block">
                     Billing Location
@@ -1234,6 +1334,31 @@ export default function CustomersPage() {
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 space-y-5 text-sm bg-white">
+            {/* Serving Organisation Banner */}
+            {viewCustomer?.orgId && (
+              <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-lg flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Building2 className="h-4 w-4 text-primary" />
+                  <div>
+                    <span className="text-xs font-bold text-slate-900">
+                      {typeof viewCustomer.orgId === "object"
+                        ? viewCustomer.orgId.companyName
+                        : "Organisation"}
+                    </span>
+                    {typeof viewCustomer.orgId === "object" &&
+                      viewCustomer.orgId.orgCode && (
+                        <span className="text-[10px] font-mono text-slate-500 ml-1.5">
+                          ({viewCustomer.orgId.orgCode})
+                        </span>
+                      )}
+                  </div>
+                </div>
+                <Badge variant="outline" className="text-[10px] text-blue-700 bg-white">
+                  Serving Entity
+                </Badge>
+              </div>
+            )}
+
             {/* Contact & Tax Details */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3.5 bg-slate-50 rounded-lg border border-slate-100">
               <div>
