@@ -39,7 +39,7 @@ export function RecentBills() {
     <Card>
       <CardHeader className="flex-row items-center justify-between pb-3">
         <CardTitle className="text-sm">Recent Bills</CardTitle>
-        <Link href="/transactions/bills" className="text-xs text-primary hover:underline">View all</Link>
+        <Link href="/masters/bill-list" className="text-xs text-primary hover:underline">View all</Link>
       </CardHeader>
       <CardContent className="p-0">
         {loading ? (

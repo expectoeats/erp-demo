@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
-  MapPin,
   Users,
   Building2,
   FileText,
@@ -46,19 +45,16 @@ const navItems: NavItem[] = [
     label: "Masters",
     icon: Building,
     children: [
-      { label: "Locations", href: "/masters/locations", icon: MapPin },
       { label: "Clients", href: "/masters/customers", icon: Users },
-      { label: "Bill Types", href: "/masters/bill-types", icon: FileText },
       { label: "Financial Years", href: "/masters/financial-years", icon: CalendarDays },
+      { label: "New Bills", href: "/masters/new-bills", icon: FileText },
+      { label: "Bill List", href: "/masters/bill-list", icon: ScrollText },
     ],
   },
   {
     label: "Setup",
     icon: Settings,
     children: [
-      { label: "Tax / GST Config", href: "/setup/tax", icon: DollarSign },
-      { label: "Electricity Setup", href: "/setup/electricity", icon: Zap },
-      { label: "Water Setup", href: "/setup/water", icon: Droplets },
       { label: "Organisation Settings", href: "/setup/organisation", icon: Building },
     ],
   },
@@ -67,7 +63,6 @@ const navItems: NavItem[] = [
     icon: CreditCard,
     children: [
       { label: "Generate Bills", href: "/transactions/generate-bill", icon: FileText },
-      { label: "Bills", href: "/transactions/bills", icon: ScrollText },
       { label: "Payments", href: "/transactions/payments", icon: CreditCard },
       { label: "Receipts", href: "/transactions/receipts", icon: Receipt },
       { label: "Vouchers", href: "/transactions/vouchers", icon: BookOpen },

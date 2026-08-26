@@ -50,6 +50,8 @@ export async function GET(req: NextRequest) {
   const unitId = searchParams.get("unitId");
   const status = searchParams.get("status");
   const financialYearId = searchParams.get("financialYearId");
+  const billingMonth = searchParams.get("billingMonth");
+  const billingYear = searchParams.get("billingYear");
   const page = parseInt(searchParams.get("page") ?? "1");
   const limit = parseInt(searchParams.get("limit") ?? "20");
   const skip = (page - 1) * limit;
@@ -58,8 +60,10 @@ export async function GET(req: NextRequest) {
   if (search) query.invoiceNumber = new RegExp(search, "i");
   if (customerId) query.customerId = customerId;
   if (unitId) query.unitId = unitId;
-  if (status) query.status = status;
+  if (status) query.status = { $in: status.split(",") };
   if (financialYearId) query.financialYearId = financialYearId;
+  if (billingMonth) query.billingMonth = billingMonth;
+  if (billingYear) query.billingYear = parseInt(billingYear);
 
   const [data, total] = await Promise.all([
     Bill.find(query)
