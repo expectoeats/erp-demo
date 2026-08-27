@@ -109,10 +109,17 @@ export async function POST(req: NextRequest) {
   const billingType = parsed.data.billingType || "monthly";
   const nextBillingDate = calculateNextBillingDate(startDate, billingType);
 
+  // Auto-link the billing location from the selected organisation/branch when not provided.
+  let resolvedLocationId = parsed.data.billingLocationId ? parsed.data.billingLocationId : undefined;
+  if (!resolvedLocationId && parsed.data.orgId) {
+    const org = await OrgSettings.findById(parsed.data.orgId).lean();
+    resolvedLocationId = org?.locationId ? org.locationId.toString() : undefined;
+  }
+
   const customerPayload = {
     ...parsed.data,
     orgId: parsed.data.orgId ? parsed.data.orgId : undefined,
-    billingLocationId: parsed.data.billingLocationId ? parsed.data.billingLocationId : undefined,
+    billingLocationId: resolvedLocationId,
     billingStartDate: startDate,
     billingType,
     nextBillingDate,
@@ -199,7 +206,7 @@ export async function POST(req: NextRequest) {
         billTypeId: billType._id,
         financialYearId: fy._id,
         customerId: customer._id,
-        locationId: parsed.data.billingLocationId ? parsed.data.billingLocationId : undefined,
+        locationId: resolvedLocationId ? resolvedLocationId : undefined,
         invoiceDate: startDate,
         dueDate,
         billingMonth: months[startDate.getMonth()],

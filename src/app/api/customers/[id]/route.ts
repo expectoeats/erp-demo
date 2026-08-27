@@ -51,11 +51,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const body = await req.json();
 
   const updateData: Record<string, unknown> = { ...body };
-  if (body.billingLocationId === "") {
-    updateData.billingLocationId = null;
+
+  // Organisation is accepted from input; auto-link the billing location from it.
+  if (body.orgId !== undefined) {
+    updateData.orgId = body.orgId || null;
   }
-  if (body.orgId === "") {
-    updateData.orgId = null;
+
+  const locationProvided = body.billingLocationId !== undefined;
+  if (!locationProvided && body.orgId) {
+    const org = await OrgSettings.findById(body.orgId).lean();
+    updateData.billingLocationId = org?.locationId ? org.locationId : null;
+  } else if (locationProvided) {
+    updateData.billingLocationId = body.billingLocationId === "" ? null : body.billingLocationId;
   }
 
   if (body.billingStartDate) {

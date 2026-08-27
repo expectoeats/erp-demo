@@ -56,7 +56,7 @@ export default function NewBillsPage() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("unpaid");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [monthFilter, setMonthFilter] = useState("");
   const [yearFilter, setYearFilter] = useState("");
   const [stats, setStats] = useState<BillStats | null>(null);
@@ -86,11 +86,9 @@ export default function NewBillsPage() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadStats(); }, [loadStats]);
 
-  const filteredData = statusFilter === "unpaid"
-    ? data.filter((b) => b.status === "unpaid")
-    : statusFilter === "partially_paid"
-      ? data.filter((b) => b.status === "partially_paid")
-      : data;
+  const filteredData = statusFilter === "all"
+    ? data
+    : data.filter((b) => b.status === statusFilter);
 
   const columns: Column<Record<string, unknown>>[] = [
     {

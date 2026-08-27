@@ -62,7 +62,7 @@ export default function BillListPage() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  const [statusFilter] = useState("paid");
   const [monthFilter, setMonthFilter] = useState("");
   const [yearFilter, setYearFilter] = useState("");
   const [fyFilter, setFyFilter] = useState("");
@@ -73,7 +73,6 @@ export default function BillListPage() {
   const loadStats = useCallback(async () => {
     let url = "/api/bills/stats";
     const params = new URLSearchParams();
-    if (statusFilter) params.set("status", statusFilter);
     if (monthFilter) params.set("billingMonth", monthFilter);
     if (yearFilter) params.set("billingYear", yearFilter);
     if (fyFilter) params.set("financialYearId", fyFilter);
@@ -82,7 +81,7 @@ export default function BillListPage() {
     const r = await fetch(url);
     const d = await r.json();
     setStats(d.data);
-  }, [statusFilter, monthFilter, yearFilter, fyFilter]);
+  }, [monthFilter, yearFilter, fyFilter]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -244,19 +243,6 @@ export default function BillListPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-3 mb-4">
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-40 h-8 text-xs">
-            <SelectValue placeholder="All statuses" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Statuses</SelectItem>
-            <SelectItem value="unpaid">Unpaid</SelectItem>
-            <SelectItem value="partially_paid">Partially Paid</SelectItem>
-            <SelectItem value="paid">Paid</SelectItem>
-            <SelectItem value="overdue">Overdue</SelectItem>
-            <SelectItem value="cancelled">Cancelled</SelectItem>
-          </SelectContent>
-        </Select>
         <Select value={monthFilter} onValueChange={setMonthFilter}>
           <SelectTrigger className="w-40 h-8 text-xs">
             <SelectValue placeholder="All months" />

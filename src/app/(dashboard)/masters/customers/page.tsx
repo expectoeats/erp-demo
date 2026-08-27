@@ -243,15 +243,19 @@ export default function CustomersPage() {
 
   function openEdit(c: Customer) {
     setEditing(c);
-    const locId =
-      typeof c.billingLocationId === "object" && c.billingLocationId !== null
-        ? (c.billingLocationId as LocationRef)._id
-        : (c.billingLocationId as string) || "";
-
     const orgId =
       typeof c.orgId === "object" && c.orgId !== null
         ? (c.orgId as OrgRef)._id
         : (c.orgId as string) || "";
+
+    // Auto-link the billing location from the client's organisation/branch.
+    const linkedOrg = orgs.find((o) => o._id === orgId);
+    const locId =
+      linkedOrg
+        ? typeof linkedOrg.locationId === "object" && linkedOrg.locationId !== null
+          ? (linkedOrg.locationId as LocationRef)._id
+          : (linkedOrg.locationId as string) || ""
+        : "";
 
     const startDate = c.billingStartDate
       ? new Date(c.billingStartDate).toISOString().split("T")[0]
@@ -792,68 +796,55 @@ export default function CustomersPage() {
                   </p>
                 </div>
 
-                <div>
-                  <Label className="text-xs font-semibold text-slate-700 mb-2 block">
-                    Billing Location
-                  </Label>
-                  <select
-                    value={form.billingLocationId}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, billingLocationId: e.target.value }))
-                    }
-                    className="w-full h-10 border border-slate-200 rounded-md px-3 bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  >
-                    <option value="">-- Select Billing Location --</option>
-                    {locations.map((loc) => (
-                      <option key={loc._id} value={loc._id}>
-                        {loc.name} {loc.locationId ? `(${loc.locationId})` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <div className="md:col-span-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-xs font-semibold text-slate-700">
+                        Billing Frequency
+                      </Label>
+                      <div className="flex gap-1.5 p-1 mt-1.5 bg-slate-100/80 rounded-lg border border-slate-200">
+                        {["monthly", "quarterly", "yearly"].map((freq) => {
+                          const active = form.billingType === freq;
+                          return (
+                            <button
+                              type="button"
+                              key={freq}
+                              onClick={() =>
+                                setForm((f) => ({ ...f, billingType: freq }))
+                              }
+                              className={`flex-1 rounded-md px-3 py-1.5 text-xs font-semibold capitalize transition-colors ${
+                                active
+                                  ? "bg-blue-600 text-white shadow-sm"
+                                  : "text-gray-600 hover:text-gray-900 hover:bg-white"
+                              }`}
+                            >
+                              {freq}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
 
-                <div>
-                  <Label className="text-xs font-semibold text-slate-700 mb-2 block">
-                    Billing Frequency
-                  </Label>
-                  <div className="flex flex-wrap gap-3 items-center mt-1 bg-white p-2 rounded-lg border border-slate-200">
-                    {["monthly", "quarterly", "yearly"].map((freq) => (
-                      <label
-                        key={freq}
-                        className="flex items-center gap-1.5 text-xs text-slate-700 capitalize cursor-pointer font-medium"
-                      >
-                        <input
-                          type="radio"
-                          name="billingType"
-                          value={freq}
-                          checked={form.billingType === freq}
-                          onChange={(e) =>
-                            setForm((f) => ({ ...f, billingType: e.target.value }))
-                          }
-                          className="accent-primary h-3.5 w-3.5"
-                        />
-                        <span>{freq}</span>
-                      </label>
-                    ))}
+                    <div>
+                      <Label className="text-xs font-semibold text-slate-700">
+                        Billing Start Date
+                      </Label>
+                      <Input
+                        type="date"
+                        className="mt-1.5 bg-white text-sm h-10"
+                        value={form.billingStartDate}
+                        onChange={(e) =>
+                          setForm((f) => ({ ...f, billingStartDate: e.target.value }))
+                        }
+                      />
+                    </div>
                   </div>
-                </div>
 
-                <div>
-                  <Label className="text-xs font-semibold text-slate-700 mb-2 block">
-                    Billing Start Date
-                  </Label>
-                  <Input
-                    type="date"
-                    className="mt-1 bg-white text-sm"
-                    value={form.billingStartDate}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, billingStartDate: e.target.value }))
-                    }
-                  />
                   {form.billingStartDate && (
-                    <p className="text-[11px] text-slate-500 mt-1.5">
-                      Next bill:{" "}
-                      <span className="text-primary font-semibold">
+                    <div className="mt-3 flex items-center gap-2 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-xs w-fit">
+                      <Calendar className="h-3.5 w-3.5 text-blue-600" />
+                      <span className="text-slate-500">Next Bill Generation:</span>
+                      <span className="font-semibold text-blue-900">
                         {(() => {
                           const d = new Date(form.billingStartDate);
                           if (form.billingType === "quarterly")
@@ -868,7 +859,7 @@ export default function CustomersPage() {
                           });
                         })()}
                       </span>
-                    </p>
+                    </div>
                   )}
                 </div>
               </div>
