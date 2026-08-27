@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db/connection";
 import { requireAuth, requireRole, ADMIN_ROLES } from "@/lib/auth/helpers";
 import OrgSettings from "@/lib/models/OrgSettings";
-import Location from "@/lib/models/Location";
 import { z } from "zod";
 
 const orgSchema = z.object({
@@ -32,40 +31,30 @@ export async function GET(_: NextRequest) {
   if (error) return error;
   await connectDB();
 
-  // Ensure Location model is registered
-  if (!Location) {
-    // Model import check
-  }
-
   let orgs = await OrgSettings.find()
-    .populate("locationId", "name locationId city state gstin address")
     .sort({ isDefault: -1, createdAt: -1 })
     .lean();
 
   // If no org exists yet, seed a default one
   if (orgs.length === 0) {
-    const defaultLocation = await Location.findOne({ isActive: true }).lean();
     const seeded = await OrgSettings.create({
       companyName: "Evermore Estates Pvt. Ltd.",
       orgCode: "EVM-HQ",
-      locationId: defaultLocation ? defaultLocation._id : undefined,
       phone: "+91 98765 43210",
       email: "contact@evermore.com",
-      address: defaultLocation?.address || "Sector 62, Noida, Uttar Pradesh",
-      city: defaultLocation?.city || "Noida",
-      state: defaultLocation?.state || "Uttar Pradesh",
-      pincode: defaultLocation?.pincode || "201301",
-      gstin: defaultLocation?.gstin || "07AAAAA0000A1Z5",
+      address: "Sector 62, Noida, Uttar Pradesh",
+      city: "Noida",
+      state: "Uttar Pradesh",
+      pincode: "201301",
+      gstin: "07AAAAA0000A1Z5",
       invoicePrefix: "INV",
       receiptPrefix: "RCT",
       voucherPrefix: "VCH",
       isDefault: true,
       isActive: true,
     });
-    const populated = await OrgSettings.findById(seeded._id)
-      .populate("locationId", "name locationId city state gstin address")
-      .lean();
-    orgs = populated ? [populated] : [];
+    const created = await OrgSettings.findById(seeded._id).lean();
+    orgs = created ? [created] : [];
   }
 
   return NextResponse.json({ data: orgs });
@@ -100,7 +89,6 @@ export async function POST(req: NextRequest) {
 
   const payload = {
     ...data,
-    locationId: data.locationId ? data.locationId : undefined,
     orgCode: data.orgCode?.toUpperCase(),
     gstin: data.gstin?.toUpperCase(),
     pan: data.pan?.toUpperCase(),
@@ -112,9 +100,7 @@ export async function POST(req: NextRequest) {
   };
 
   const created = await OrgSettings.create(payload);
-  const populated = await OrgSettings.findById(created._id)
-    .populate("locationId", "name locationId city state gstin address")
-    .lean();
+  const saved = await OrgSettings.findById(created._id).lean();
 
-  return NextResponse.json({ data: populated }, { status: 201 });
+  return NextResponse.json({ data: saved }, { status: 201 });
 }

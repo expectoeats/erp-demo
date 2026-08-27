@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db/connection";
 import { requireAuth, requireRole, ADMIN_ROLES } from "@/lib/auth/helpers";
 import OrgSettings from "@/lib/models/OrgSettings";
-import Location from "@/lib/models/Location";
 import { z } from "zod";
 
 const updateSchema = z.object({
@@ -36,13 +35,7 @@ export async function GET(
   await connectDB();
   const { id } = await params;
 
-  if (!Location) {
-    // Model register check
-  }
-
-  const org = await OrgSettings.findById(id)
-    .populate("locationId", "name locationId city state gstin address")
-    .lean();
+  const org = await OrgSettings.findById(id).lean();
 
   if (!org) return NextResponse.json({ error: "Organization not found" }, { status: 404 });
   return NextResponse.json({ data: org });
@@ -77,9 +70,6 @@ export async function PATCH(
     updatedBy: session!.user.id,
   };
 
-  if (data.locationId === "") {
-    updatePayload.locationId = null;
-  }
   if (data.orgCode) updatePayload.orgCode = data.orgCode.toUpperCase();
   if (data.gstin) updatePayload.gstin = data.gstin.toUpperCase();
   if (data.pan) updatePayload.pan = data.pan.toUpperCase();
@@ -87,9 +77,7 @@ export async function PATCH(
   if (data.receiptPrefix) updatePayload.receiptPrefix = data.receiptPrefix.toUpperCase();
   if (data.voucherPrefix) updatePayload.voucherPrefix = data.voucherPrefix.toUpperCase();
 
-  const updated = await OrgSettings.findByIdAndUpdate(id, updatePayload, { new: true })
-    .populate("locationId", "name locationId city state gstin address")
-    .lean();
+  const updated = await OrgSettings.findByIdAndUpdate(id, updatePayload, { new: true }).lean();
 
   if (!updated) return NextResponse.json({ error: "Organization not found" }, { status: 404 });
   return NextResponse.json({ data: updated });

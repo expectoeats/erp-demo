@@ -72,21 +72,11 @@ interface OrgSettingsData {
   createdAt?: string;
 }
 
-interface LocationOption {
-  _id: string;
-  name: string;
-  locationId?: string;
-  city?: string;
-  state?: string;
-  gstin?: string;
-  address?: string;
-  pincode?: string;
-}
+
 
 const emptyForm = {
   companyName: "",
   orgCode: "",
-  locationId: "",
   phone: "",
   email: "",
   website: "",
@@ -101,12 +91,10 @@ const emptyForm = {
   voucherPrefix: "VCH",
   invoiceFooter: "Thank you for your business!",
   bankDetails: "",
-  isDefault: false,
 };
 
 export default function OrganisationSetupPage() {
   const [data, setData] = useState<OrgSettingsData[]>([]);
-  const [locations, setLocations] = useState<LocationOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [open, setOpen] = useState(false);
@@ -132,22 +120,6 @@ export default function OrganisationSetupPage() {
     load();
   }, [load]);
 
-  // Load locations for dropdown mapping
-  useEffect(() => {
-    async function fetchLocations() {
-      try {
-        const res = await fetch("/api/locations?limit=100");
-        const json = await res.json();
-        if (json.data) {
-          setLocations(json.data);
-        }
-      } catch {
-        // ignore error silently
-      }
-    }
-    fetchLocations();
-  }, []);
-
   function openAdd() {
     setEditing(null);
     setForm(emptyForm);
@@ -156,15 +128,9 @@ export default function OrganisationSetupPage() {
 
   function openEdit(org: OrgSettingsData) {
     setEditing(org);
-    const locId =
-      typeof org.locationId === "object" && org.locationId !== null
-        ? (org.locationId as LocationRef)._id
-        : (org.locationId as string) || "";
-
     setForm({
       companyName: org.companyName || "",
       orgCode: org.orgCode || "",
-      locationId: locId,
       phone: org.phone || "",
       email: org.email || "",
       website: org.website || "",
@@ -179,40 +145,8 @@ export default function OrganisationSetupPage() {
       voucherPrefix: org.voucherPrefix || "VCH",
       invoiceFooter: org.invoiceFooter || "",
       bankDetails: org.bankDetails || "",
-      isDefault: org.isDefault || false,
     });
     setOpen(true);
-  }
-
-  function handleLocationChange(locId: string) {
-    const selectedLoc = locations.find((l) => l._id === locId);
-    setForm((f) => ({
-      ...f,
-      locationId: locId,
-      // Auto-fill city/state/gstin/address if not already provided
-      city: f.city || selectedLoc?.city || "",
-      state: f.state || selectedLoc?.state || "",
-      gstin: f.gstin || selectedLoc?.gstin || "",
-      address: f.address || selectedLoc?.address || "",
-      pincode: f.pincode || selectedLoc?.pincode || "",
-    }));
-  }
-
-  function handleAutofillFromLocation() {
-    const selectedLoc = locations.find((l) => l._id === form.locationId);
-    if (!selectedLoc) {
-      toast.error("Please select a location first");
-      return;
-    }
-    setForm((f) => ({
-      ...f,
-      city: selectedLoc.city || f.city,
-      state: selectedLoc.state || f.state,
-      gstin: selectedLoc.gstin || f.gstin,
-      address: selectedLoc.address || f.address,
-      pincode: selectedLoc.pincode || f.pincode,
-    }));
-    toast.success("Location address and details autofilled!");
   }
 
   async function handleSetDefault(org: OrgSettingsData) {
@@ -300,14 +234,9 @@ export default function OrganisationSetupPage() {
   const filteredData = data.filter((item) => {
     if (!debouncedSearch) return true;
     const q = debouncedSearch.toLowerCase();
-    const locName =
-      typeof item.locationId === "object" && item.locationId !== null
-        ? (item.locationId as LocationRef).name.toLowerCase()
-        : "";
     return (
       item.companyName.toLowerCase().includes(q) ||
       (item.orgCode || "").toLowerCase().includes(q) ||
-      locName.includes(q) ||
       (item.city || "").toLowerCase().includes(q)
     );
   });
@@ -316,6 +245,7 @@ export default function OrganisationSetupPage() {
     {
       key: "companyName",
       label: "Company / Branch",
+      className: "min-w-[230px]",
       render: (v, row) => {
         const item = row as unknown as OrgSettingsData;
         return (
@@ -338,43 +268,9 @@ export default function OrganisationSetupPage() {
       },
     },
     {
-      key: "locationId",
-      label: "Assigned Location",
-      render: (v, row) => {
-        const item = row as unknown as OrgSettingsData;
-        const loc =
-          typeof v === "object" && v !== null
-            ? (v as LocationRef)
-            : locations.find((l) => l._id === v);
-
-        return loc ? (
-          <div>
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800">
-              <MapPin className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-              <span>{loc.name}</span>
-              {loc.locationId && (
-                <span className="text-[10px] font-mono text-slate-400">
-                  ({loc.locationId})
-                </span>
-              )}
-            </div>
-            <div className="text-[11px] text-slate-500 mt-0.5">
-              {[loc.city || item.city, loc.state || item.state]
-                .filter(Boolean)
-                .join(", ") || "-"}
-            </div>
-          </div>
-        ) : (
-          <div className="flex items-center gap-1 text-xs text-amber-600">
-            <MapPin className="h-3.5 w-3.5 text-amber-500" />
-            <span>No location mapped</span>
-          </div>
-        );
-      },
-    },
-    {
       key: "phone",
       label: "Contact Details",
+      className: "min-w-[160px]",
       render: (_, row) => {
         const item = row as unknown as OrgSettingsData;
         return (
@@ -399,6 +295,7 @@ export default function OrganisationSetupPage() {
     {
       key: "invoicePrefix",
       label: "Doc Prefixes",
+      className: "min-w-[140px]",
       render: (_, row) => {
         const item = row as unknown as OrgSettingsData;
         return (
@@ -416,6 +313,7 @@ export default function OrganisationSetupPage() {
     {
       key: "isDefault",
       label: "Status",
+      className: "w-28",
       render: (v, row) => {
         const item = row as unknown as OrgSettingsData;
         return (
@@ -475,8 +373,8 @@ export default function OrganisationSetupPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Organisation & Location Management"
-        description="Configure multiple companies, branch entities, location mappings, and document prefixes"
+        title="Organisation Management"
+        description="Configure multiple companies, branch entities, and document prefixes"
       >
         <Button onClick={openAdd} className="shadow-sm">
           <Plus className="h-4 w-4 mr-1.5" /> Add Company / Branch
@@ -508,10 +406,7 @@ export default function OrganisationSetupPage() {
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600 mt-1.5">
                   <span className="flex items-center gap-1 font-medium text-emerald-700">
                     <MapPin className="h-3.5 w-3.5 text-emerald-600" />
-                    {typeof defaultOrg.locationId === "object" &&
-                    defaultOrg.locationId !== null
-                      ? `${(defaultOrg.locationId as LocationRef).name}`
-                      : "Main Location"}
+                    Main Location
                   </span>
                   {defaultOrg.gstin && (
                     <span className="font-mono">GSTIN: {defaultOrg.gstin}</span>
@@ -607,42 +502,6 @@ export default function OrganisationSetupPage() {
                   />
                 </div>
 
-                <div className="sm:col-span-2 p-3 bg-emerald-50/60 rounded-xl border border-emerald-200 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
-                      <MapPin className="h-3.5 w-3.5 text-emerald-600" />
-                      Associated Business Location (From Locations Master) *
-                    </Label>
-                    {form.locationId && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleAutofillFromLocation}
-                        className="h-6 text-[11px] text-emerald-700 hover:bg-emerald-100 font-medium"
-                      > Autofill Address from Location
-                      </Button>
-                    )}
-                  </div>
-
-                  <select
-                    value={form.locationId}
-                    onChange={(e) => handleLocationChange(e.target.value)}
-                    className="w-full h-10 border border-slate-200 rounded-lg px-3 bg-white text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                  >
-                    <option value="">-- Select Associated Location --</option>
-                    {locations.map((loc) => (
-                      <option key={loc._id} value={loc._id}>
-                        {loc.name} {loc.locationId ? `(${loc.locationId})` : ""} -{" "}
-                        {[loc.city, loc.state].filter(Boolean).join(", ")}
-                      </option>
-                    ))}
-                  </select>
-
-                  <p className="text-[11px] text-slate-500">
-                    Associates billing, tariffs, and client services with this physical operational branch.
-                  </p>
-                </div>
               </div>
             </div>
 
@@ -857,20 +716,6 @@ export default function OrganisationSetupPage() {
                       setForm((f) => ({ ...f, invoiceFooter: e.target.value }))
                     }
                   />
-                </div>
-
-                <div className="sm:col-span-3 pt-2">
-                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-800">
-                    <input
-                      type="checkbox"
-                      checked={form.isDefault}
-                      onChange={(e) =>
-                        setForm((f) => ({ ...f, isDefault: e.target.checked }))
-                      }
-                      className="accent-primary h-4 w-4 rounded"
-                    />
-                    <span>Set as Primary / Default Billing Organisation</span>
-                  </label>
                 </div>
               </div>
             </div>
