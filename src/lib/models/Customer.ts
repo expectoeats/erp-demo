@@ -8,6 +8,8 @@ export interface ICustomerService {
   initialReading?: number;
   currentReading?: number;
   description?: string;
+  isTaxable?: boolean;
+  gstRate?: number;
 }
 
 export interface ICustomer extends Document {
@@ -47,6 +49,8 @@ const CustomerServiceSchema = new Schema<ICustomerService>(
     initialReading: { type: Number, default: 0 },
     currentReading: { type: Number, default: 0 },
     description: { type: String, trim: true },
+    isTaxable: { type: Boolean, default: true },
+    gstRate: { type: Number, default: 18 },
   },
   { _id: false }
 );

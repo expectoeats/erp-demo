@@ -19,6 +19,8 @@ const serviceItemSchema = z.object({
   initialReading: z.number().optional(),
   currentReading: z.number().optional(),
   description: z.string().optional(),
+  isTaxable: z.boolean().default(true),
+  gstRate: z.number().default(18),
 });
 
 const schema = z.object({
@@ -133,14 +135,25 @@ export async function POST(req: NextRequest) {
   if (parsed.data.services && parsed.data.services.length > 0) {
     try {
       let billType = await BillType.findOne({ isActive: true });
+      if (!billType) billType = await BillType.findOne({});
       if (!billType) {
-        billType = await BillType.create({
-          name: "Standard Invoice",
-          code: "INV",
-          prefix: "INV",
-          createdBy: session!.user.id,
-        });
+        try {
+          billType = await BillType.create({
+            name: "Standard Invoice",
+            code: "INV",
+            prefix: "INV",
+            createdBy: session!.user.id,
+          });
+        } catch (e: unknown) {
+          // Race / duplicate code (e.g. inactive INV exists) — reuse existing
+          if (e && typeof e === "object" && "code" in e && (e as { code: number }).code === 11000) {
+            billType = await BillType.findOne({ code: "INV" });
+          } else {
+            throw e;
+          }
+        }
       }
+      if (!billType) throw new Error("BillType unavailable for auto-billing");
 
       let fy = await FinancialYear.findOne({ isActive: true });
       if (!fy) {
@@ -177,7 +190,12 @@ export async function POST(req: NextRequest) {
           notes = `Meter Reading: ${curr} - ${init} = ${quantity} units (kWh)`;
         }
 
-        const amount = (Number(s.rate) || 0) * quantity;
+        const amount = parseFloat(((Number(s.rate) || 0) * quantity).toFixed(2));
+        const isTaxable = s.isTaxable !== undefined ? s.isTaxable : true;
+        const gstRate = s.gstRate !== undefined && s.gstRate !== null && !isNaN(Number(s.gstRate)) ? Number(s.gstRate) : 18;
+        const gstAmount = isTaxable ? parseFloat(((amount * gstRate) / 100).toFixed(2)) : 0;
+        const totalAmount = parseFloat((amount + gstAmount).toFixed(2));
+
         return {
           serviceName: s.type,
           serviceCode: s.type.toUpperCase().slice(0, 4),
@@ -186,15 +204,17 @@ export async function POST(req: NextRequest) {
           unit: s.type.toLowerCase() === "electricity" ? "kWh" : "unit",
           rate: Number(s.rate) || 0,
           amount,
-          isTaxable: false,
-          gstRate: 0,
-          gstAmount: 0,
-          totalAmount: amount,
+          isTaxable,
+          gstRate,
+          gstAmount,
+          totalAmount,
           notes,
         };
       });
 
-      const grandTotal = items.reduce((acc, i) => acc + i.totalAmount, 0);
+      const subtotal = parseFloat(items.reduce((acc, i) => acc + i.amount, 0).toFixed(2));
+      const totalGst = parseFloat(items.reduce((acc, i) => acc + i.gstAmount, 0).toFixed(2));
+      const grandTotal = parseFloat((subtotal + totalGst).toFixed(2));
 
       const dueDate = new Date(startDate);
       dueDate.setDate(dueDate.getDate() + 15);
@@ -212,10 +232,10 @@ export async function POST(req: NextRequest) {
         billingMonth: months[startDate.getMonth()],
         billingYear: startDate.getFullYear(),
         items,
-        subtotal: grandTotal,
+        subtotal,
         discount: 0,
-        taxableAmount: grandTotal,
-        totalGst: 0,
+        taxableAmount: subtotal,
+        totalGst,
         otherCharges: 0,
         roundOff: 0,
         grandTotal,
@@ -225,7 +245,8 @@ export async function POST(req: NextRequest) {
         notes: `Initial ${billingType} billing generated on client creation`,
         createdBy: session!.user.id,
       });
-    } catch {
+    } catch (err) {
+      console.error("[customers POST] auto-bill failed:", err);
       // Allow customer creation even if auto-billing setup encounters missing master
     }
   }

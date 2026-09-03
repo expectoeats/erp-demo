@@ -62,29 +62,55 @@ export default function NewBillsPage() {
   const [stats, setStats] = useState<BillStats | null>(null);
   const debouncedSearch = useDebounce(search, 400);
 
-  const loadStats = useCallback(async () => {
-    let url = "/api/bills/stats?status=unpaid,partially_paid";
-    if (monthFilter) url += `&billingMonth=${monthFilter}`;
-    if (yearFilter) url += `&billingYear=${yearFilter}`;
-    const r = await fetch(url);
-    const d = await r.json();
-    setStats(d.data);
+  const loadStats = useCallback(async (signal: AbortSignal) => {
+    const params = new URLSearchParams({ status: "unpaid,partially_paid" });
+    if (monthFilter && monthFilter !== "all") params.set("billingMonth", monthFilter);
+    if (yearFilter && yearFilter !== "all") params.set("billingYear", yearFilter);
+    try {
+      const r = await fetch(`/api/bills/stats?${params.toString()}`, { signal });
+      if (!r.ok) { setStats(null); return; }
+      const d = await r.json();
+      setStats(d.data ?? null);
+    } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      setStats(null);
+    }
   }, [monthFilter, yearFilter]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
-    let url = `/api/bills?page=${page}&limit=20&search=${encodeURIComponent(debouncedSearch)}&status=unpaid,partially_paid`;
-    if (monthFilter) url += `&billingMonth=${monthFilter}`;
-    if (yearFilter) url += `&billingYear=${yearFilter}`;
-    const r = await fetch(url);
-    const d = await r.json();
-    setData(d.data ?? []);
-    setTotal(d.total ?? 0);
-    setLoading(false);
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: "20",
+      search: debouncedSearch,
+      status: "unpaid,partially_paid",
+    });
+    if (monthFilter && monthFilter !== "all") params.set("billingMonth", monthFilter);
+    if (yearFilter && yearFilter !== "all") params.set("billingYear", yearFilter);
+    try {
+      const r = await fetch(`/api/bills?${params.toString()}`, { signal });
+      if (!r.ok) { setData([]); setTotal(0); return; }
+      const d = await r.json();
+      setData(d.data ?? []);
+      setTotal(d.total ?? 0);
+    } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      setData([]); setTotal(0);
+    } finally {
+      setLoading(false);
+    }
   }, [debouncedSearch, page, monthFilter, yearFilter]);
 
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => { loadStats(); }, [loadStats]);
+  useEffect(() => {
+    const ac = new AbortController();
+    load(ac.signal);
+    return () => ac.abort();
+  }, [load]);
+  useEffect(() => {
+    const ac = new AbortController();
+    loadStats(ac.signal);
+    return () => ac.abort();
+  }, [loadStats]);
 
   const filteredData = statusFilter === "all"
     ? data

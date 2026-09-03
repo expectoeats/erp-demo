@@ -85,12 +85,38 @@ export function DataTable<T extends Record<string, unknown>>({
           <TableBody>
             {loading ? (
               Array.from({ length: 5 }).map((_, i) => (
-                <TableRow key={i}>
-                  {columns.map((col) => (
-                    <TableCell key={col.key}>
-                      <div className="h-4 bg-muted animate-pulse rounded w-3/4" />
-                    </TableCell>
-                  ))}
+                <TableRow key={i} className="animate-in fade-in slide-in-from-bottom-1" style={{ animationDelay: `${i * 50}ms` }}>
+                  {columns.map((col, colIdx) => {
+                    const widths = [
+                      "w-3/4", "w-full", "w-5/6", "w-2/3", "w-1/2",
+                      "w-4/5", "w-3/5", "w-11/12", "w-2/5",
+                    ];
+                    const heights = ["h-3.5", "h-4", "h-3", "h-4.5"];
+                    const w = widths[(i + colIdx) % widths.length];
+                    const h = heights[(i * 2 + colIdx) % heights.length];
+                    const isBadgeCol = colIdx === columns.length - 1 ||
+                      (col.className && (col.className.includes("Badge") || col.className.includes("badge") || col.label.toLowerCase().includes("status")));
+                    return (
+                      <TableCell key={col.key}>
+                        {isBadgeCol ? (
+                          <div className="flex items-center justify-end gap-1">
+                            {Array.from({ length: 2 }).map((_, bi) => (
+                              <div
+                                key={bi}
+                                className="h-4 w-4 rounded-full bg-slate-200/60 relative overflow-hidden"
+                              >
+                                <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/60 to-transparent" />
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className={`${h} ${w} bg-gradient-to-r from-slate-200/70 via-slate-200/50 to-slate-200/70 rounded relative overflow-hidden`}>
+                            <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.8s_infinite] bg-gradient-to-r from-transparent via-white/70 to-transparent" style={{ animationDelay: `${(i + colIdx) * 100}ms` }} />
+                          </div>
+                        )}
+                      </TableCell>
+                    );
+                  })}
                 </TableRow>
               ))
             ) : data.length === 0 ? (

@@ -16,7 +16,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
       .populate("currentOwnerId", "name customerId mobile email")
       .populate("locationId", "name locationId")
       .populate("subLocationId", "name subLocationId")
-      .populate("services", "name code calculationType")
+      .populate("services", "name code calculationType isTaxable gstRate")
       .lean(),
     Bill.find({ unitId: id }).sort({ createdAt: -1 }).limit(10).lean(),
   ]);

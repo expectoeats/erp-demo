@@ -61,28 +61,53 @@ export default function UnitsPage() {
     rentRate: "", securityDeposit: "", notes: "",
   });
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
-    const r = await fetch(`/api/units?search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=20`);
-    const d = await r.json();
-    setData(d.data ?? []);
-    setTotal(d.total ?? 0);
-    setLoading(false);
+    try {
+      const r = await fetch(`/api/units?search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=20`, { signal });
+      if (!r.ok) { setData([]); setTotal(0); return; }
+      const d = await r.json();
+      setData(d.data ?? []);
+      setTotal(d.total ?? 0);
+    } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      setData([]); setTotal(0);
+    } finally {
+      setLoading(false);
+    }
   }, [debouncedSearch, page]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const ac = new AbortController();
+    load(ac.signal);
+    return () => ac.abort();
+  }, [load]);
 
   useEffect(() => {
-    fetch("/api/locations?limit=100").then((r) => r.json()).then((d) => setLocations(d.data ?? []));
-    fetch("/api/customers?limit=200").then((r) => r.json()).then((d) => setCustomers(d.data ?? []));
-    fetch("/api/services?active=true").then((r) => r.json()).then((d) => setServices(d.data ?? []));
+    const ac = new AbortController();
+    let mounted = true;
+    Promise.all([
+      fetch("/api/locations?limit=100", { signal: ac.signal }).then((r) => r.ok ? r.json() : { data: [] }),
+      fetch("/api/customers?limit=200", { signal: ac.signal }).then((r) => r.ok ? r.json() : { data: [] }),
+      fetch("/api/services?active=true", { signal: ac.signal }).then((r) => r.ok ? r.json() : { data: [] }),
+    ]).then(([loc, cust, svc]) => {
+      if (!mounted) return;
+      setLocations(loc.data ?? []);
+      setCustomers(cust.data ?? []);
+      setServices(svc.data ?? []);
+    }).catch((e) => { if (e instanceof DOMException && e.name === "AbortError") return; });
+    return () => { mounted = false; ac.abort(); };
   }, []);
 
   useEffect(() => {
-    if (form.locationId) {
-      fetch(`/api/sub-locations?locationId=${form.locationId}&limit=100`)
-        .then((r) => r.json()).then((d) => setSubLocations(d.data ?? []));
-    }
+    if (!form.locationId) { setSubLocations([]); return; }
+    const ac = new AbortController();
+    let mounted = true;
+    fetch(`/api/sub-locations?locationId=${form.locationId}&limit=100`, { signal: ac.signal })
+      .then((r) => r.ok ? r.json() : { data: [] })
+      .then((d) => { if (mounted) setSubLocations(d.data ?? []); })
+      .catch((e) => { if (e instanceof DOMException && e.name === "AbortError") return; });
+    return () => { mounted = false; ac.abort(); };
   }, [form.locationId]);
 
   function resetForm() {

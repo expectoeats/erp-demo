@@ -51,11 +51,14 @@ export function DashboardStats() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/dashboard/stats")
-      .then((r) => r.json())
-      .then((d) => setStats(d.data))
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    const abort = new AbortController();
+    let mounted = true;
+    fetch("/api/dashboard/stats", { signal: abort.signal })
+      .then((r) => (r.ok ? r.json() : { data: null }))
+      .then((d) => { if (mounted) setStats(d.data ?? null); })
+      .catch((e) => { if (e instanceof DOMException && e.name === "AbortError") return; })
+      .finally(() => { if (mounted) setLoading(false); });
+    return () => { mounted = false; abort.abort(); };
   }, []);
 
   if (loading) {

@@ -107,6 +107,8 @@ BillSchema.index({ invoiceNumber: 1 });
 BillSchema.index({ customerId: 1, status: 1 });
 BillSchema.index({ unitId: 1 });
 BillSchema.index({ financialYearId: 1, billingMonth: 1 });
+// Historical immutability: one bill per unit per month-year (prevents overwrite)
+BillSchema.index({ unitId: 1, billingMonth: 1, billingYear: 1 }, { unique: true, sparse: true });
 
 const Bill: Model<IBill> =
   mongoose.models.Bill || mongoose.model<IBill>("Bill", BillSchema);

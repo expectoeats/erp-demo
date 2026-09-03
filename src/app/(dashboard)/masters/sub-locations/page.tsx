@@ -35,19 +35,36 @@ export default function SubLocationsPage() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ name: "", code: "", locationId: "", address: "" });
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
-    const r = await fetch(`/api/sub-locations?search=${encodeURIComponent(search)}&page=${page}`);
-    const d = await r.json();
-    setData(d.data ?? []);
-    setTotal(d.total ?? 0);
-    setLoading(false);
+    try {
+      const r = await fetch(`/api/sub-locations?search=${encodeURIComponent(search)}&page=${page}`, { signal });
+      if (!r.ok) { setData([]); setTotal(0); return; }
+      const d = await r.json();
+      setData(d.data ?? []);
+      setTotal(d.total ?? 0);
+    } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      setData([]); setTotal(0);
+    } finally {
+      setLoading(false);
+    }
   }, [search, page]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const ac = new AbortController();
+    load(ac.signal);
+    return () => ac.abort();
+  }, [load]);
 
   useEffect(() => {
-    fetch("/api/locations?limit=100").then((r) => r.json()).then((d) => setLocations(d.data ?? []));
+    const ac = new AbortController();
+    let mounted = true;
+    fetch("/api/locations?limit=100", { signal: ac.signal })
+      .then((r) => r.ok ? r.json() : { data: [] })
+      .then((d) => { if (mounted) setLocations(d.data ?? []); })
+      .catch((e) => { if (e instanceof DOMException && e.name === "AbortError") return; });
+    return () => { mounted = false; ac.abort(); };
   }, []);
 
   async function handleSave() {

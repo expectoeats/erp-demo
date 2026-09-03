@@ -29,7 +29,7 @@ const schema = z.object({
   locationId: z.string().min(1),
   subLocationId: z.string().min(1),
   invoiceDate: z.string(),
-  dueDate: z.string(),
+  dueDate: z.string().optional().or(z.literal("")),
   billingMonth: z.string(),
   billingYear: z.number(),
   services: z.array(serviceInputSchema).min(1, "At least one service required"),
@@ -114,23 +114,36 @@ export async function POST(req: NextRequest) {
     applyRoundOff: d.applyRoundOff,
   });
 
-  const bill = await Bill.create({
-    invoiceNumber,
-    billTypeId: d.billTypeId,
-    financialYearId: d.financialYearId,
-    customerId: d.customerId,
-    unitId: d.unitId,
-    locationId: d.locationId,
-    subLocationId: d.subLocationId,
-    invoiceDate: new Date(d.invoiceDate),
-    dueDate: new Date(d.dueDate),
-    billingMonth: d.billingMonth,
-    billingYear: d.billingYear,
-    ...billing,
-    outstandingAmount: billing.grandTotal,
-    notes: d.notes,
-    createdBy: session!.user.id,
-  });
+  // Prevent duplicate billing for same unit/month-year (historical retention)
+  const duplicate = await Bill.findOne({ unitId: d.unitId, billingMonth: d.billingMonth, billingYear: d.billingYear }).lean();
+  if (duplicate) {
+    return NextResponse.json({ error: `A bill for ${d.billingMonth} ${d.billingYear} already exists for this unit. Generated bills are immutable and cannot be overwritten — please cancel the existing bill first if you need to re-bill this period.` }, { status: 409 });
+  }
 
-  return NextResponse.json({ data: bill }, { status: 201 });
+  try {
+    const bill = await Bill.create({
+      invoiceNumber,
+      billTypeId: d.billTypeId,
+      financialYearId: d.financialYearId,
+      customerId: d.customerId,
+      unitId: d.unitId,
+      locationId: d.locationId,
+      subLocationId: d.subLocationId,
+      invoiceDate: new Date(d.invoiceDate),
+      dueDate: new Date(d.dueDate || new Date(d.invoiceDate).getTime() + 15 * 24 * 60 * 60 * 1000),
+      billingMonth: d.billingMonth,
+      billingYear: d.billingYear,
+      ...billing,
+      outstandingAmount: billing.grandTotal,
+      notes: d.notes,
+      createdBy: session!.user.id,
+    });
+    return NextResponse.json({ data: bill }, { status: 201 });
+  } catch (e: unknown) {
+    // Handle race-condition duplicate key
+    if (e && typeof e === "object" && "code" in e && (e as { code: number }).code === 11000) {
+      return NextResponse.json({ error: `Duplicate bill detected for ${d.billingMonth} ${d.billingYear}. Generated bills are immutable — cancel the existing bill before re-billing this period.` }, { status: 409 });
+    }
+    throw e;
+  }
 }

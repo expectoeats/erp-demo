@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, use } from "react";
+import React, { useEffect, useState, use, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -164,9 +164,85 @@ export default function BillDetailPage({
   }
 
   if (loading) {
+    const shimmer = (w: string = "w-full", h: string = "h-3") => (
+      <div className={`${h} ${w} bg-gradient-to-r from-slate-200/70 via-slate-200/50 to-slate-200/70 rounded relative overflow-hidden`}>
+        <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.8s_infinite] bg-gradient-to-r from-transparent via-white/70 to-transparent" />
+      </div>
+    );
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
+      <div className="space-y-6 max-w-4xl mx-auto pb-12">
+        <div className="flex items-center justify-between no-print gap-3">
+          {shimmer("w-32", "h-8")}
+          <div className="flex items-center gap-2.5">
+            {shimmer("w-28", "h-8")}
+            {shimmer("w-36", "h-8")}
+          </div>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl shadow-xs p-8 space-y-8 animate-in fade-in duration-500">
+          <div className="flex items-start justify-between border-b-2 border-primary/30 pb-6">
+            <div className="flex items-center gap-3.5">
+              <div className="h-12 w-12 rounded-xl bg-slate-100 border border-slate-200" />
+              <div className="space-y-2">
+                {shimmer("w-36", "h-5")}
+                {shimmer("w-48", "h-3")}
+              </div>
+            </div>
+            <div className="text-right space-y-2">
+              {shimmer("w-28", "h-5")}
+              {shimmer("w-24", "h-5")}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 rounded-lg bg-slate-50 border border-slate-100">
+            {[0,1,2,3].map((i)=>(
+              <div key={i} className="space-y-1.5">
+                {shimmer("w-16", "h-2.5")}
+                {shimmer("w-28", "h-4")}
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            {[0,1].map((i)=>(
+              <div key={i} className="space-y-2 p-4 rounded-lg border border-slate-200/80 bg-white">
+                {shimmer("w-32", "h-3")}
+                <div className="space-y-1.5 pt-2">
+                  {shimmer("w-full", "h-3")}
+                  {shimmer("w-5/6", "h-3")}
+                  {shimmer("w-4/6", "h-3")}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="space-y-3 border-t border-slate-100 pt-6">
+            {shimmer("w-32", "h-4")}
+            <div className="border rounded-lg overflow-hidden divide-y divide-slate-100">
+              {[0,1,2,3].map((i)=>(
+                <div key={i} className="p-3 flex items-center justify-between gap-4">
+                  <div className="flex-1 space-y-1.5">
+                    {shimmer("w-2/5", "h-3.5")}
+                    {shimmer("w-1/4", "h-2.5")}
+                  </div>
+                  <div className="space-y-1">
+                    {shimmer("w-20", "h-3")}
+                    {shimmer("w-16", "h-2.5")}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="w-56 ml-auto space-y-2 p-4 rounded-lg bg-slate-50 border border-slate-200">
+            {[0,1,2].map((i)=>(
+              <div key={i} className="flex justify-between items-center">
+                {shimmer("w-16", "h-3")}
+                {shimmer("w-20", "h-3")}
+              </div>
+            ))}
+            <div className="h-px bg-slate-200 my-1" />
+            <div className="flex justify-between items-center pt-1">
+              {shimmer("w-20", "h-4")}
+              {shimmer("w-24", "h-5")}
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -312,7 +388,7 @@ export default function BillDetailPage({
             )}
             {bill.customerId?.gstin && (
               <div className="font-mono text-slate-600">
-                GSTIN: {bill.customerId.gstin}
+                GSTIN: <span className="font-semibold">{bill.customerId.gstin}</span>
               </div>
             )}
             {bill.customerId?.address && (
@@ -330,6 +406,11 @@ export default function BillDetailPage({
                 <span className="font-semibold text-slate-800">
                   {bill.locationId.name}
                 </span>
+                {bill.locationId.gstin && (
+                  <div className="font-mono text-[11px] text-slate-600 mt-0.5">
+                    GSTIN: <span className="font-semibold">{bill.locationId.gstin}</span>
+                  </div>
+                )}
               </div>
             )}
             {bill.unitId && (
@@ -359,138 +440,466 @@ export default function BillDetailPage({
           </div>
         </div>
 
-        {/* Itemized Services Table */}
-        <div className="mb-6 overflow-hidden rounded-lg border border-slate-200">
-          <table className="w-full text-xs text-left border-collapse">
-            <thead className="bg-slate-50 border-b border-slate-200 font-bold uppercase tracking-wider text-slate-600 text-[11px]">
-              <tr>
-                <th className="py-2.5 px-3 w-10 text-center">#</th>
-                <th className="py-2.5 px-3">Service Description</th>
-                <th className="py-2.5 px-3 text-right">Rate</th>
-                <th className="py-2.5 px-3 text-center">Units</th>
-                <th className="py-2.5 px-3 text-right">Taxable</th>
-                <th className="py-2.5 px-3 text-right">GST</th>
-                <th className="py-2.5 px-3 text-right">Total Amount</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {bill.items?.map((item, idx) => (
-                <tr key={idx} className="hover:bg-slate-50/50">
-                  <td className="py-3 px-3 text-center text-slate-400 font-medium">
-                    {idx + 1}
-                  </td>
-                  <td className="py-3 px-3">
-                    <span className="font-semibold text-slate-800 capitalize">
-                      {item.serviceName}
-                    </span>
-                    {item.notes && (
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        {item.notes}
+        {(() => {
+          // --------- GST Slab Summary computation ---------
+          type SlabKey = string;
+          const slabMap = new Map<SlabKey, {
+            taxable: number;
+            cgst: number;
+            sgst: number;
+            igst: number;
+            totalGst: number;
+          }>();
+          let linesTaxable = 0;
+          let linesGst = 0;
+          let exemptBase = 0;
+          const sameState = !!(bill.locationId?.gstin && bill.customerId?.gstin
+            ? bill.locationId.gstin.slice(0, 2) === bill.customerId.gstin.slice(0, 2)
+            : true);
+
+          for (const it of bill.items ?? []) {
+            const amt = Number(it.amount) || 0;
+            if (!it.isTaxable) {
+              exemptBase += amt;
+              continue;
+            }
+            linesTaxable += amt;
+            const slab = String(it.gstRate ?? 0);
+            const gstAmt = Number(it.gstAmount) || 0;
+            linesGst += gstAmt;
+            const bucket = slabMap.get(slab) ?? { taxable: 0, cgst: 0, sgst: 0, igst: 0, totalGst: 0 };
+            bucket.taxable += amt;
+            bucket.totalGst += gstAmt;
+            if (sameState) {
+              bucket.cgst += gstAmt / 2;
+              bucket.sgst += gstAmt / 2;
+            } else {
+              bucket.igst += gstAmt;
+            }
+            slabMap.set(slab, bucket);
+          }
+          const slabs = Array.from(slabMap.entries()).sort((a, b) => Number(a[0]) - Number(b[0]));
+
+          const rupee = (n: number) => formatCurrency(parseFloat(n.toFixed(2)));
+
+          return (
+            <>
+              {/* Itemized Services Table — professional GST-aligned layout */}
+              <div className="mb-4 overflow-hidden rounded-lg border border-slate-200 print:break-inside-avoid">
+                <table className="w-full text-xs text-left border-collapse table-fixed">
+                  <colgroup>
+                    <col style={{ width: "32px" }} />
+                    <col style={{ width: "72px" }} />
+                    <col style={{ width: "auto" }} />
+                    <col style={{ width: "82px" }} />
+                    <col style={{ width: "72px" }} />
+                    <col style={{ width: "92px" }} />
+                    <col style={{ width: "62px" }} />
+                    <col style={{ width: "92px" }} />
+                    <col style={{ width: "102px" }} />
+                  </colgroup>
+                  <thead className="bg-slate-800 text-white uppercase tracking-wider text-[10.5px] font-bold">
+                    <tr>
+                      <th className="py-2.5 px-2.5 text-center">#</th>
+                      <th className="py-2.5 px-2 text-center" title="HSN=Goods, SAC=Services Accounting Code — GST classification (SAC 6-digit for services). For turnover <5Cr, 4-digit HSN/SAC is sufficient on invoice.">
+                        HSN/SAC <span className="normal-case font-normal opacity-60 ml-0.5" aria-hidden>ⓘ</span>
+                      </th>
+                      <th className="py-2.5 px-3">Service Description</th>
+                      <th className="py-2.5 px-3 text-right font-mono tabular-nums">Rate</th>
+                      <th className="py-2.5 px-3 text-right font-mono tabular-nums">Qty</th>
+                      <th className="py-2.5 px-3 text-right font-mono tabular-nums">Taxable Value</th>
+                      <th className="py-2.5 px-3 text-right font-mono tabular-nums">GST %</th>
+                      <th className="py-2.5 px-3 text-right font-mono tabular-nums">GST Amt</th>
+                      <th className="py-2.5 px-3 text-right font-mono tabular-nums">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {(bill.items ?? []).map((item, idx) => {
+                      const r = Number(item.gstRate) || 0;
+                      const code =
+                        (item.serviceCode || "").toUpperCase() ||
+                        (item.serviceName || "").toUpperCase().slice(0, 4);
+                      // SAC = Services Accounting Code (6-digit). HSN for goods. Using service-type based SAC, not GST-rate based — as per GST law.
+                      const SAC_BY_SERVICE: Record<string, string> = {
+                        maintenance: "99722", // Facility / property maintenance
+                        electricity: "99873", // Electricity transmission / distribution
+                        water: "99865", // Water distribution
+                        security: "99852", // Security services
+                        others: "99979", // Other misc services
+                      };
+                      const hsn = SAC_BY_SERVICE[(item.serviceName || "").toLowerCase()] ?? "99979";
+                      return (
+                        <tr key={idx} className="hover:bg-slate-50/60 print:hover:bg-white">
+                          <td className="py-3 px-2.5 text-center text-slate-500 font-bold align-top">{idx + 1}</td>
+                          <td className="py-3 px-2 text-center align-top">
+                            <span className={`inline-flex items-center justify-center font-mono font-semibold text-[10.5px] px-1.5 py-0.5 rounded border ${item.isTaxable && r > 0 ? "bg-slate-50 border-slate-200 text-slate-700" : "bg-sky-50 border-sky-200 text-sky-700"}`}>
+                              {hsn}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 align-top">
+                            <div className="flex flex-wrap items-center gap-1 mb-0.5">
+                              <span className="font-bold text-slate-800 capitalize">{item.serviceName}</span>
+                              {code && (
+                                <span className="text-[10px] font-mono uppercase tracking-wide px-1.5 py-0.5 rounded bg-slate-50 border border-slate-200 text-slate-600">
+                                  {code}
+                                </span>
+                              )}
+                              {item.calculationType && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded border border-slate-100 text-slate-500 bg-white">
+                                  {item.calculationType}
+                                </span>
+                              )}
+                            </div>
+                            {item.notes && (
+                              <p className="text-[10.5px] text-slate-500 leading-snug whitespace-pre-wrap mt-0.5">
+                                {item.notes}
+                              </p>
+                            )}
+                            {item.isTaxable ? (
+                              <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/70">
+                                <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+                                  Taxable · GST @ {r}%
+                                </span>
+                                {r === 0 && (
+                                  <span className="text-[10px] font-semibold px-1 rounded bg-sky-50 text-sky-700 border border-sky-200">
+                                    Exempt / Nil Rated
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 bg-slate-50 border border-slate-200">
+                                <span className="inline-block h-1.5 w-1.5 rounded-full bg-slate-400" />
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
+                                  No GST (Exempt Supply)
+                                </span>
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 text-right font-mono tabular-nums whitespace-nowrap align-top text-slate-700">
+                            {rupee(Number(item.rate))}/{item.unit}
+                          </td>
+                          <td className="py-3 px-3 text-right font-mono tabular-nums whitespace-nowrap align-top text-slate-700">
+                            {item.quantity} <span className="text-slate-400 text-[10px]">{item.unit}</span>
+                          </td>
+                          <td className="py-3 px-3 text-right font-mono tabular-nums whitespace-nowrap align-top font-medium text-slate-800">
+                            {rupee(Number(item.amount))}
+                          </td>
+                          <td className="py-3 px-3 text-center align-top">
+                            {item.isTaxable ? (
+                              <span className={`inline-flex items-center justify-center font-mono font-bold text-[11px] rounded px-1.5 py-0.5 min-w-[46px] ${
+                                r === 0 ? "bg-sky-100 text-sky-800 border border-sky-200"
+                                  : r === 5 ? "bg-amber-100 text-amber-800 border border-amber-200"
+                                    : r === 12 ? "bg-violet-100 text-violet-800 border border-violet-200"
+                                      : r === 18 ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                                        : "bg-rose-100 text-rose-800 border border-rose-200"
+                              }`}>
+                                {r}%
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 font-mono font-bold text-[11px]">—</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 text-right align-top whitespace-nowrap">
+                            {item.isTaxable ? (
+                              <div className="inline-flex flex-col items-end leading-tight">
+                                <span className="text-[10.5px] text-slate-500 font-medium">
+                                  {sameState ? "CGST + SGST" : "IGST"}
+                                </span>
+                                <span className="font-mono tabular-nums font-bold text-emerald-700">
+                                  {rupee(Number(item.gstAmount))}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 font-mono text-[11px]">—</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 text-right font-mono font-extrabold tabular-nums whitespace-nowrap align-top text-slate-900 text-[12px]">
+                            {rupee(Number(item.totalAmount))}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot className="border-t-2 border-slate-800/20 bg-slate-50/80 font-semibold text-[11px]">
+                    <tr>
+                      <td colSpan={5} className="py-2.5 px-3 text-right uppercase tracking-wider text-slate-700">
+                        Invoice Line Item Totals →
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono tabular-nums text-slate-900 font-bold">
+                        {rupee(linesTaxable + exemptBase)}
+                      </td>
+                      <td></td>
+                      <td className="py-2.5 px-3 text-right font-mono tabular-nums text-emerald-800 font-bold">
+                        {rupee(linesGst)}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono tabular-nums text-slate-900 font-extrabold">
+                        {rupee((linesTaxable + exemptBase) + linesGst)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* ===== GST Slab-wise Summary (CGST / SGST / IGST split) ===== */}
+              <div className="mb-6 overflow-hidden rounded-lg border border-slate-300 print:break-inside-avoid">
+                <div className="bg-white border-b border-slate-200 px-4 py-2.5 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-1.5 rounded border border-slate-200 bg-slate-50">
+                      <FileText className="h-3.5 w-3.5 text-slate-700" />
+                    </div>
+                    <div>
+                      <p className="text-[11px] uppercase tracking-wider font-bold text-slate-800">
+                        GST Computation Summary
                       </p>
+                      <p className="text-[10px] text-slate-500 font-medium">
+                        {sameState ? "Intra-state supply (CGST + SGST)" : "Inter-state supply (IGST)"}
+                        {bill.locationId?.gstin && bill.customerId?.gstin && (
+                          <span className="ml-1.5 text-slate-400">
+                            · GSTIN Pair: {bill.locationId.gstin.slice(0, 2)} vs {bill.customerId.gstin.slice(0, 2)}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[10px] uppercase tracking-wider text-slate-500">Total GST Payable</p>
+                    <p className="font-mono font-bold tabular-nums text-[14px] text-slate-900">{rupee(bill.totalGst || linesGst)}</p>
+                  </div>
+                </div>
+                <table className="w-full text-[11.5px] border-collapse table-fixed">
+                  <colgroup>
+                    <col style={{ width: "110px" }} />
+                    <col style={{ width: "110px" }} />
+                    <col style={{ width: "110px" }} />
+                    <col style={{ width: "110px" }} />
+                    <col />
+                  </colgroup>
+                  <thead className="bg-slate-100 border-b border-slate-200 text-slate-700 uppercase tracking-wider text-[10.5px] font-bold">
+                    <tr>
+                      <th className="py-2 px-3 text-left">GST Slab</th>
+                      <th className="py-2 px-3 text-right font-mono tabular-nums">Taxable Base</th>
+                      <th className={`py-2 px-3 text-right font-mono tabular-nums ${sameState ? "" : "sr-only"}`}>CGST</th>
+                      <th className={`py-2 px-3 text-right font-mono tabular-nums ${sameState ? "" : "sr-only"}`}>SGST</th>
+                      <th className={`py-2 px-3 text-right font-mono tabular-nums ${sameState ? "sr-only" : ""}`}>IGST</th>
+                      <th className="py-2 px-3 text-right font-mono tabular-nums">Total Tax</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {slabs.length === 0 && exemptBase === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="py-6 px-4 text-center text-slate-500 text-[11px] italic">
+                          No GST applicable on this invoice.
+                        </td>
+                      </tr>
+                    ) : (
+                      <>
+                        {slabs.map(([rate, b]) => {
+                          const r = Number(rate);
+                          return (
+                            <tr key={rate} className="bg-white">
+                              <td className="py-2.5 px-3 text-left">
+                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded border border-slate-200 bg-slate-50 font-mono font-semibold text-[11px] text-slate-700">
+                                  {r}% GST
+                                </span>
+                                <span className="ml-2 text-[10.5px] text-slate-500">
+                                  ({sameState ? `${r / 2}% + ${r / 2}%` : `${r}% IGST`})
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-mono tabular-nums font-medium text-slate-800">{rupee(b.taxable)}</td>
+                              <td className={`py-2.5 px-3 text-right font-mono tabular-nums text-slate-700 ${sameState ? "" : "sr-only"}`}>{rupee(b.cgst)}</td>
+                              <td className={`py-2.5 px-3 text-right font-mono tabular-nums text-slate-700 ${sameState ? "" : "sr-only"}`}>{rupee(b.sgst)}</td>
+                              <td className={`py-2.5 px-3 text-right font-mono tabular-nums text-slate-700 ${sameState ? "sr-only" : ""}`}>{rupee(b.igst)}</td>
+                              <td className="py-2.5 px-3 text-right font-mono tabular-nums font-semibold text-slate-800">{rupee(b.totalGst)}</td>
+                            </tr>
+                          );
+                        })}
+                        {exemptBase > 0 && (
+                          <tr className="bg-slate-50">
+                            <td className="py-2.5 px-3 text-left">
+                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded border border-slate-200 bg-white font-mono font-semibold text-[11px] text-slate-600">
+                                Exempt / Nil Rated
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono tabular-nums font-medium text-slate-700">{rupee(exemptBase)}</td>
+                            <td className="py-2.5 px-3 text-right font-mono tabular-nums text-slate-400">—</td>
+                            <td className="py-2.5 px-3 text-right font-mono tabular-nums text-slate-400">—</td>
+                            <td className="py-2.5 px-3 text-right font-mono tabular-nums text-slate-400">—</td>
+                            <td className="py-2.5 px-3 text-right font-mono tabular-nums text-slate-500 font-semibold">0.00</td>
+                          </tr>
+                        )}
+                      </>
                     )}
-                  </td>
-                  <td className="py-3 px-3 text-right font-mono">
-                    {formatCurrency(item.rate)}
-                  </td>
-                  <td className="py-3 px-3 text-center font-mono">
-                    {item.quantity} {item.unit}
-                  </td>
-                  <td className="py-3 px-3 text-right font-mono">
-                    {formatCurrency(item.amount)}
-                  </td>
-                  <td className="py-3 px-3 text-right font-mono text-slate-500">
-                    {item.isTaxable ? `${item.gstRate}% (${formatCurrency(item.gstAmount)})` : "0%"}
-                  </td>
-                  <td className="py-3 px-3 text-right font-mono font-semibold text-slate-900">
-                    {formatCurrency(item.totalAmount)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Calculations & Summary */}
-        <div className="flex flex-col sm:flex-row justify-between items-start gap-6 mb-8 text-xs">
-          <div className="max-w-xs text-slate-500">
-            {bill.notes && (
-              <div className="p-3 bg-slate-50 rounded-lg border border-slate-100 text-[11px]">
-                <span className="font-semibold text-slate-700 block mb-0.5">
-                  Notes / Terms:
-                </span>
-                {bill.notes}
+                  </tbody>
+                  {slabs.length > 0 && (
+                    <tfoot className="border-t border-slate-300 bg-slate-50 font-semibold text-[11.5px]">
+                      <tr>
+                        <td className="py-2.5 px-3 text-left uppercase tracking-wider text-slate-700">Total Tax Amount</td>
+                        <td className="py-2.5 px-3 text-right font-mono tabular-nums text-slate-800">{rupee(linesTaxable)}</td>
+                        <td className={`py-2.5 px-3 text-right font-mono tabular-nums text-slate-700 ${sameState ? "" : "sr-only"}`}>
+                          {rupee(slabs.reduce((s, [, b]) => s + b.cgst, 0))}
+                        </td>
+                        <td className={`py-2.5 px-3 text-right font-mono tabular-nums text-slate-700 ${sameState ? "" : "sr-only"}`}>
+                          {rupee(slabs.reduce((s, [, b]) => s + b.sgst, 0))}
+                        </td>
+                        <td className={`py-2.5 px-3 text-right font-mono tabular-nums text-slate-700 ${sameState ? "sr-only" : ""}`}>
+                          {rupee(slabs.reduce((s, [, b]) => s + b.igst, 0))}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono tabular-nums text-slate-900 font-bold text-[13px]">
+                          {rupee(linesGst)}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
               </div>
-            )}
-          </div>
 
-          <div className="w-full sm:w-72 space-y-2 border-t sm:border-t-0 pt-3 sm:pt-0">
-            <div className="flex justify-between text-slate-600">
-              <span>Subtotal:</span>
-              <span className="font-mono font-medium">{formatCurrency(bill.subtotal)}</span>
-            </div>
+              {/* Calculations & Summary */}
+              <div className="flex flex-col sm:flex-row justify-between items-start gap-6 mb-8 text-xs">
+                <div className="max-w-xs text-slate-500 space-y-3">
+                  {bill.notes && (
+                    <div className="p-3 bg-slate-50 rounded-lg border border-slate-100 text-[11px]">
+                      <span className="font-semibold text-slate-700 block mb-0.5">
+                        Notes / Terms:
+                      </span>
+                      {bill.notes}
+                    </div>
+                  )}
+                  {/* GSTIN block for reference if available */}
+                  {(bill.locationId?.gstin || bill.customerId?.gstin) && (
+                    <div className="grid grid-cols-2 gap-2 text-[10.5px]">
+                      {bill.locationId?.gstin && (
+                        <div className="p-2.5 rounded-lg border border-slate-200 bg-white">
+                          <p className="text-slate-500 uppercase tracking-wider font-semibold mb-0.5">Supplier GSTIN</p>
+                          <p className="font-mono font-bold text-slate-800">{bill.locationId.gstin}</p>
+                        </div>
+                      )}
+                      {bill.customerId?.gstin && (
+                        <div className="p-2.5 rounded-lg border border-slate-200 bg-white">
+                          <p className="text-slate-500 uppercase tracking-wider font-semibold mb-0.5">Recipient GSTIN</p>
+                          <p className="font-mono font-bold text-slate-800">{bill.customerId.gstin}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
 
-            {bill.discount > 0 && (
-              <div className="flex justify-between text-emerald-600">
-                <span>Discount:</span>
-                <span className="font-mono font-medium">- {formatCurrency(bill.discount)}</span>
+                <div className="w-full sm:w-80 border-2 border-slate-800/20 rounded-xl overflow-hidden bg-white shadow-xs">
+                  <div className="bg-gradient-to-r from-slate-800 to-slate-900 px-3.5 py-2 flex items-center gap-2">
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                    <p className="text-[10.5px] uppercase tracking-widest font-bold text-white">Invoice Summary (₹)</p>
+                  </div>
+                  <div className="p-3.5 space-y-2 text-[11.5px]">
+                    <div className="flex justify-between items-center py-0.5">
+                      <span className="text-slate-600 font-medium">Gross Subtotal</span>
+                      <span className="font-mono font-semibold tabular-nums text-slate-800">{rupee(bill.subtotal)}</span>
+                    </div>
+
+                    {bill.discount > 0 && (
+                      <div className="flex justify-between items-center py-0.5 text-emerald-700">
+                        <span className="font-medium">(-) Discount Allowed</span>
+                        <span className="font-mono font-semibold tabular-nums">- {rupee(bill.discount)}</span>
+                      </div>
+                    )}
+
+                    <div className="flex justify-between items-center py-0.5 border-t border-dashed border-slate-200 pt-2">
+                      <span className="text-slate-700 font-semibold">Net Taxable Amount</span>
+                      <span className="font-mono font-bold tabular-nums text-slate-900">{rupee(bill.taxableAmount)}</span>
+                    </div>
+
+                    <div className="p-2.5 rounded-md bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 space-y-1 mt-1">
+                      <div className="flex justify-between items-center">
+                        <span className="font-bold uppercase tracking-wider text-[10.5px] text-emerald-900">GST Collected</span>
+                        <span className="font-mono font-extrabold tabular-nums text-emerald-800 text-[12px]">
+                          {rupee(bill.totalGst || linesGst)}
+                        </span>
+                      </div>
+                      {slabs.length > 0 && (
+                        <div className="flex flex-wrap gap-1 pt-0.5">
+                          {slabs.map(([r, b]) => (
+                            <span
+                              key={r}
+                              className="inline-flex items-center text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded-md border border-white bg-white/80 text-emerald-900"
+                            >
+                              {r}%: {rupee(b.totalGst)}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {bill.otherCharges > 0 && (
+                      <div className="flex justify-between items-center py-0.5">
+                        <span className="text-slate-600 font-medium">Other Charges</span>
+                        <span className="font-mono font-semibold tabular-nums">{rupee(bill.otherCharges)}</span>
+                      </div>
+                    )}
+
+                    {bill.roundOff !== 0 && (
+                      <div className="flex justify-between items-center py-0.5 text-slate-500 text-[11px]">
+                        <span>Round Off Adjustment</span>
+                        <span className="font-mono tabular-nums">{rupee(bill.roundOff)}</span>
+                      </div>
+                    )}
+
+                    <div className="h-px bg-gradient-to-r from-transparent via-slate-300 to-transparent my-1.5" />
+
+                    <div className="flex justify-between items-center text-sm py-1.5 px-2 -mx-1 rounded-md bg-slate-900 text-white shadow-md print:bg-white print:text-slate-900 print:border-2 print:border-slate-900">
+                      <span className="font-extrabold uppercase tracking-widest text-[10.5px]">Grand Total</span>
+                      <span className="font-mono font-black tabular-nums text-[15px]">
+                        {rupee(bill.grandTotal)}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1 pt-1 border-t border-dashed border-slate-200 mt-1">
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500">Amount Received:</span>
+                        <span className="font-mono font-bold tabular-nums text-emerald-600">
+                          {rupee(bill.paidAmount)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500">Balance Due:</span>
+                        <span className={`font-mono font-bold tabular-nums ${bill.outstandingAmount > 0 ? "text-rose-700" : "text-emerald-700"}`}>
+                          {rupee(bill.outstandingAmount)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
-            )}
-
-            {bill.totalGst > 0 && (
-              <div className="flex justify-between text-slate-600">
-                <span>Total GST:</span>
-                <span className="font-mono font-medium">{formatCurrency(bill.totalGst)}</span>
-              </div>
-            )}
-
-            {bill.otherCharges > 0 && (
-              <div className="flex justify-between text-slate-600">
-                <span>Other Charges:</span>
-                <span className="font-mono font-medium">{formatCurrency(bill.otherCharges)}</span>
-              </div>
-            )}
-
-            {bill.roundOff !== 0 && (
-              <div className="flex justify-between text-slate-500 text-[11px]">
-                <span>Round Off:</span>
-                <span className="font-mono">{formatCurrency(bill.roundOff)}</span>
-              </div>
-            )}
-
-            <Separator className="my-1" />
-
-            <div className="flex justify-between text-sm font-bold text-slate-900">
-              <span>Grand Total:</span>
-              <span className="font-mono text-primary">{formatCurrency(bill.grandTotal)}</span>
-            </div>
-
-            <div className="flex justify-between text-xs pt-1">
-              <span className="text-slate-500">Amount Paid:</span>
-              <span className="font-mono font-semibold text-emerald-600">
-                {formatCurrency(bill.paidAmount)}
-              </span>
-            </div>
-
-            <div className="flex justify-between text-xs">
-              <span className="text-slate-500">Balance Outstanding:</span>
-              <span className="font-mono font-semibold text-rose-600">
-                {formatCurrency(bill.outstandingAmount)}
-              </span>
-            </div>
-          </div>
-        </div>
+            </>
+          );
+        })()}
 
         {/* Footer Authorization Block */}
-        <div className="border-t border-slate-200 pt-6 mt-8 flex justify-between items-end text-[11px] text-slate-500">
-          <div>
-            <p>Thank you for your business.</p>
-            <p className="mt-0.5">This is a system-generated invoice.</p>
+        <div className="border-t border-slate-200 pt-6 mt-8 flex flex-col sm:flex-row justify-between items-end text-[11px] text-slate-500 gap-6 print:break-inside-avoid">
+          <div className="space-y-1 max-w-md">
+            <p className="font-semibold text-slate-700">Thank you for your business.</p>
+            <p className="text-[10.5px]">
+              This is a computer-generated tax invoice under the Goods &amp; Services Tax (GST) Act, 2017 and does not require a physical signature.
+            </p>
+            <p className="text-[10.5px] italic">
+              All prices are stated in Indian Rupees (₹). E. &amp; O.E.
+            </p>
           </div>
-          <div className="text-center w-40">
-            <div className="border-b border-dashed border-slate-400 h-10 mb-1" />
-            <span className="font-semibold uppercase tracking-wider text-[10px] text-slate-600">
-              Authorized Signature
-            </span>
+          <div className="flex gap-10 items-end">
+            <div className="text-center w-44">
+              <div className="text-[10px] text-slate-500 mb-1 uppercase tracking-wider font-medium">
+                Seal &amp; Stamp
+              </div>
+              <div className="border-2 border-dashed border-slate-300 h-14 mb-1 rounded bg-slate-50/60" />
+            </div>
+            <div className="text-center w-44">
+              <div className="text-[10px] text-slate-500 mb-1 uppercase tracking-wider font-medium">
+                Authorized Signatory
+              </div>
+              <div className="border-b-2 border-dashed border-slate-400 h-16 mb-1" />
+              <div className="mt-1 h-px w-28 mx-auto bg-slate-300" />
+              <span className="font-semibold uppercase tracking-wider text-[10px] text-slate-700 block mt-1">
+                Signature &amp; Name
+              </span>
+            </div>
           </div>
         </div>
       </div>

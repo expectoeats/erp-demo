@@ -50,6 +50,8 @@ interface CustomerService {
   initialReading?: number;
   currentReading?: number;
   description?: string;
+  isTaxable?: boolean;
+  gstRate?: number;
 }
 
 interface LocationRef {
@@ -141,9 +143,13 @@ const serviceTypes = [
   { value: "others", label: "Others" },
 ];
 
+const GST_SLABS = [0, 5, 12, 18, 28];
+
 function getServiceUnitsAndAmount(s: CustomerService): {
   units: number;
   amount: number;
+  gstAmount: number;
+  totalAmount: number;
   readingDiff?: number;
 } {
   const isElectricity = (s.type || "").toLowerCase() === "electricity";
@@ -156,15 +162,36 @@ function getServiceUnitsAndAmount(s: CustomerService): {
     units = Math.max(0, curr - init);
     readingDiff = units;
   }
-  const amount = (Number(s.rate) || 0) * units;
-  return { units, amount, readingDiff };
+  const amount = parseFloat(((Number(s.rate) || 0) * units).toFixed(2));
+  const isTaxable = s.isTaxable !== false;
+  const gstRate = Number(s.gstRate) || 0;
+  const gstAmount = isTaxable ? parseFloat(((amount * gstRate) / 100).toFixed(2)) : 0;
+  const totalAmount = parseFloat((amount + gstAmount).toFixed(2));
+  return { units, amount, gstAmount, totalAmount, readingDiff };
 }
 
-function calculateTotalServiceAmount(services: CustomerService[] = []): number {
-  return services.reduce((acc, s) => {
-    const { amount } = getServiceUnitsAndAmount(s);
-    return acc + amount;
-  }, 0);
+function calculateTotalServiceAmount(services: CustomerService[] = []): {
+  subtotal: number;
+  totalGst: number;
+  grandTotal: number;
+  gstBreakdown: Record<number, number>;
+} {
+  const gstBreakdown: Record<number, number> = {};
+  let subtotal = 0;
+  let totalGst = 0;
+
+  for (const s of services) {
+    const { amount, gstAmount } = getServiceUnitsAndAmount(s);
+    subtotal = parseFloat((subtotal + amount).toFixed(2));
+    totalGst = parseFloat((totalGst + gstAmount).toFixed(2));
+    if (gstAmount > 0) {
+      const rate = Number(s.gstRate) || 0;
+      gstBreakdown[rate] = parseFloat(((gstBreakdown[rate] || 0) + gstAmount).toFixed(2));
+    }
+  }
+
+  const grandTotal = parseFloat((subtotal + totalGst).toFixed(2));
+  return { subtotal, totalGst, grandTotal, gstBreakdown };
 }
 
 export default function CustomersPage() {
@@ -179,50 +206,62 @@ export default function CustomersPage() {
   const [viewOpen, setViewOpen] = useState(false);
   const [viewCustomer, setViewCustomer] = useState<Customer | null>(null);
   const [viewCustomerBills, setViewCustomerBills] = useState<CustomerBill[]>([]);
+  const [viewBillsLoading, setViewBillsLoading] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [locations, setLocations] = useState<LocationOption[]>([]);
   const [orgs, setOrgs] = useState<OrgOption[]>([]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     try {
       const r = await fetch(
-        `/api/customers?search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=20`
+        `/api/customers?search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=20`,
+        { signal }
       );
+      if (!r.ok) { setData([]); setTotal(0); return; }
       const d = await r.json();
       setData(d.data ?? []);
       setTotal(d.total ?? 0);
-    } catch {
-      toast.error("Failed to load clients");
+    } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      setData([]); setTotal(0);
     } finally {
       setLoading(false);
     }
   }, [debouncedSearch, page]);
 
   useEffect(() => {
-    load();
+    const ac = new AbortController();
+    load(ac.signal);
+    return () => ac.abort();
   }, [load]);
 
-  // Load locations and organisations for dropdowns
   useEffect(() => {
+    const ac = new AbortController();
+    let mounted = true;
     async function loadDropdowns() {
       try {
         const [locRes, orgRes] = await Promise.all([
-          fetch("/api/locations?limit=100"),
-          fetch("/api/settings/organisation"),
+          fetch("/api/locations?limit=100", { signal: ac.signal }),
+          fetch("/api/settings/organisation", { signal: ac.signal }),
         ]);
-        const locJson = await locRes.json();
-        const orgJson = await orgRes.json();
-
-        if (locJson.data) setLocations(locJson.data);
-        if (orgJson.data) setOrgs(orgJson.data);
-      } catch {
-        // ignore silently
+        if (!mounted) return;
+        if (locRes.ok) {
+          const locJson = await locRes.json();
+          if (locJson.data) setLocations(locJson.data);
+        }
+        if (orgRes.ok) {
+          const orgJson = await orgRes.json();
+          if (orgJson.data) setOrgs(orgJson.data);
+        }
+      } catch (e: unknown) {
+        if (e instanceof DOMException && e.name === "AbortError") return;
       }
     }
     loadDropdowns();
+    return () => { mounted = false; ac.abort(); };
   }, []);
 
   function openAdd() {
@@ -272,6 +311,8 @@ export default function CustomersPage() {
           initialReading: Number(s.initialReading) || 0,
           currentReading: Number(s.currentReading) || 0,
           description: s.description || "",
+          isTaxable: s.isTaxable !== false,
+          gstRate: s.isTaxable === false ? 0 : Number(s.gstRate) || 18,
         }))
       : [];
 
@@ -312,6 +353,7 @@ export default function CustomersPage() {
   async function handleView(c: Customer) {
     setViewCustomer(c);
     setViewCustomerBills([]);
+    setViewBillsLoading(true);
     setViewOpen(true);
 
     try {
@@ -323,6 +365,8 @@ export default function CustomersPage() {
       }
     } catch {
       // ignore silently
+    } finally {
+      setViewBillsLoading(false);
     }
   }
 
@@ -364,7 +408,7 @@ export default function CustomersPage() {
     });
   }
 
-  async function handleSave(withReport = false) {
+  async function handleSave() {
     if (!form.name.trim()) {
       toast.error("Client Name is required");
       return;
@@ -376,12 +420,28 @@ export default function CustomersPage() {
 
     setSaving(true);
     try {
+      const services = form.services.map((s) => {
+        const srv: CustomerService = {
+          type: s.type,
+          rate: Number(s.rate) || 0,
+          units: Number(s.units) || 1,
+          description: s.description || "",
+          isTaxable: s.isTaxable !== false,
+          gstRate: (s.isTaxable === false) ? 0 : (Number(s.gstRate) || 18),
+          calculationMode: s.calculationMode,
+          initialReading: Number(s.initialReading) || 0,
+          currentReading: Number(s.currentReading) || 0,
+        };
+        return srv;
+      });
+      const payload = { ...form, services };
+
       const url = editing ? `/api/customers/${editing._id}` : "/api/customers";
       const method = editing ? "PATCH" : "POST";
       const r = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
       const d = await r.json();
       if (!r.ok) {
@@ -389,35 +449,8 @@ export default function CustomersPage() {
         return;
       }
       toast.success(
-        editing ? "Client updated successfully" : "Client added successfully"
+        editing ? "Client updated successfully" : "Client added successfully. First bill generated — check New Bills tab."
       );
-
-      if (withReport) {
-        const savedCustomer = d.data || (editing ? { ...editing, ...form } : form);
-        const loc = locations.find((l) => l._id === form.billingLocationId);
-        const locName = loc
-          ? `${loc.name}${loc.locationId ? ` (${loc.locationId})` : ""}`
-          : "";
-        generateClientReportPDF({
-          customerId: savedCustomer.customerId,
-          name: form.name,
-          mobile: form.mobile,
-          email: form.email,
-          gstin: form.gstin,
-          pan: form.pan,
-          address: form.address,
-          city: form.city,
-          state: form.state,
-          pincode: form.pincode,
-          billingType: form.billingType,
-          billingLocationName: locName,
-          billingStartDate: form.billingStartDate,
-          services: form.services,
-          isActive:
-            savedCustomer.isActive !== undefined ? savedCustomer.isActive : true,
-          createdAt: savedCustomer.createdAt,
-        });
-      }
 
       setOpen(false);
       load();
@@ -440,6 +473,8 @@ export default function CustomersPage() {
           calculationMode: "direct",
           initialReading: 0,
           currentReading: 0,
+          isTaxable: true,
+          gstRate: 18,
         },
       ],
     }));
@@ -448,7 +483,7 @@ export default function CustomersPage() {
   const handleServiceChange = (
     index: number,
     field: keyof CustomerService,
-    value: string | number
+    value: string | number | boolean
   ) => {
     setForm((prev) => {
       const services = [...prev.services];
@@ -459,6 +494,25 @@ export default function CustomersPage() {
         currentService.type = typeStr;
         if (typeStr === "electricity") {
           currentService.calculationMode = currentService.calculationMode || "reading";
+        }
+      }
+
+      if (field === "isTaxable") {
+        const taxable = Boolean(value);
+        if (!taxable) {
+          currentService.gstRate = 0;
+        } else if ((Number(currentService.gstRate) || 0) === 0) {
+          currentService.gstRate = 18;
+        }
+      }
+
+      if (field === "gstRate") {
+        const rate = Number(value) || 0;
+        currentService.gstRate = rate;
+        if (rate === 0) {
+          currentService.isTaxable = false;
+        } else {
+          currentService.isTaxable = true;
         }
       }
 
@@ -518,14 +572,14 @@ export default function CustomersPage() {
       label: "Billing Cycle",
       render: (v, row) => {
         const item = row as unknown as Customer;
-        const totalServices = calculateTotalServiceAmount(item.services || []);
+        const totals = calculateTotalServiceAmount(item.services || []);
         return (
           <div>
             <div className="capitalize font-medium text-slate-800 flex items-center gap-1.5">
               <span>{String(v || "Monthly")}</span>
               <span className="text-slate-400">•</span>
               <span className="font-semibold text-primary">
-                {formatCurrency(totalServices)}
+                {formatCurrency(totals.grandTotal)}
               </span>
             </div>
             {item.billingStartDate && (
@@ -1017,6 +1071,85 @@ export default function CustomersPage() {
                           )}
                         </div>
 
+                        {/* GST Section for non-electricity services */}
+                        {!isElectricity && (
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
+                            <div className="sm:col-span-1 flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200">
+                              <div className="flex items-center gap-1.5">
+                                <div className="p-1 rounded bg-sky-100">
+                                  <Receipt className="h-3 w-3 text-sky-600" />
+                                </div>
+                                <Label className="text-[11px] font-semibold text-slate-700 cursor-pointer">
+                                  Apply GST
+                                </Label>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleServiceChange(
+                                    index,
+                                    "isTaxable",
+                                    !(service.isTaxable !== false)
+                                  )
+                                }
+                                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                                  service.isTaxable !== false
+                                    ? "bg-emerald-600"
+                                    : "bg-slate-300"
+                                }`}
+                              >
+                                <span
+                                  className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform shadow ${
+                                    service.isTaxable !== false
+                                      ? "translate-x-5"
+                                      : "translate-x-1"
+                                  }`}
+                                />
+                              </button>
+                            </div>
+                            <div className="sm:col-span-1">
+                              <Label className="text-xs text-slate-700 font-semibold">
+                                GST Slab (%)
+                              </Label>
+                              <select
+                                value={String(Number(service.gstRate) || 0)}
+                                onChange={(e) =>
+                                  handleServiceChange(
+                                    index,
+                                    "gstRate",
+                                    parseFloat(e.target.value) || 0
+                                  )
+                                }
+                                disabled={service.isTaxable === false}
+                                className={`mt-1 w-full h-9 border rounded-md px-2.5 text-xs focus:ring-2 font-semibold ${
+                                  service.isTaxable === false
+                                    ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                                    : "bg-white border-slate-200 focus:ring-primary/20 text-slate-800"
+                                }`}
+                              >
+                                {GST_SLABS.map((slab) => (
+                                  <option key={slab} value={slab}>
+                                    {slab === 0 ? "0% (Exempt)" : `${slab}%`}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="sm:col-span-1">
+                              <Label className="text-xs text-slate-700 font-semibold flex items-center gap-1">
+                                <Calculator className="h-3 w-3 text-slate-400" />
+                                Line Total
+                              </Label>
+                              <div className="mt-1 h-9 px-2.5 flex items-center rounded-md bg-gradient-to-r from-primary/5 to-primary/10 border border-primary/20">
+                                <span className="text-xs font-bold text-primary font-mono tabular-nums">
+                                  {formatCurrency(
+                                    getServiceUnitsAndAmount(service).totalAmount
+                                  )}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
                         {/* Dedicated Electricity Dual Calculation Mode UI */}
                         {isElectricity && (
                           <div className="space-y-3 pt-2 border-t border-amber-200/80">
@@ -1178,11 +1311,102 @@ export default function CustomersPage() {
                                       <span className="text-primary text-sm font-extrabold">{calculatedUnits} kWh</span>
                                     </span>
                                   </div>
-                                  <div className="font-bold text-slate-900">
-                                    Total Amount:{" "}
-                                    <span className="text-primary font-mono text-sm ml-1">
-                                      {formatCurrency(calculatedAmount)}
+                                  <div className="font-bold text-slate-900 flex flex-wrap items-center gap-3">
+                                    <span>
+                                      Base:{" "}
+                                      <span className="font-mono text-amber-900">
+                                        {formatCurrency(getServiceUnitsAndAmount(service).amount)}
+                                      </span>
                                     </span>
+                                    <span>
+                                      GST {Number(service.gstRate) || 0}%:{" "}
+                                      <span className="font-mono text-emerald-700">
+                                        +{formatCurrency(getServiceUnitsAndAmount(service).gstAmount)}
+                                      </span>
+                                    </span>
+                                    <span>
+                                      Total:{" "}
+                                      <span className="text-primary font-mono text-sm ml-1">
+                                        {formatCurrency(getServiceUnitsAndAmount(service).totalAmount)}
+                                      </span>
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* GST Section for Electricity - Reading Mode */}
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-amber-200/60">
+                                  <div className="sm:col-span-1 flex items-center justify-between p-2 rounded-lg bg-white border border-amber-200">
+                                    <div className="flex items-center gap-1.5">
+                                      <div className="p-1 rounded bg-sky-100">
+                                        <Receipt className="h-3 w-3 text-sky-600" />
+                                      </div>
+                                      <Label className="text-[11px] font-semibold text-slate-700 cursor-pointer">
+                                        Apply GST
+                                      </Label>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleServiceChange(
+                                          index,
+                                          "isTaxable",
+                                          !(service.isTaxable !== false)
+                                        )
+                                      }
+                                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                                        service.isTaxable !== false
+                                          ? "bg-emerald-600"
+                                          : "bg-slate-300"
+                                      }`}
+                                    >
+                                      <span
+                                        className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform shadow ${
+                                          service.isTaxable !== false
+                                            ? "translate-x-5"
+                                            : "translate-x-1"
+                                        }`}
+                                      />
+                                    </button>
+                                  </div>
+                                  <div className="sm:col-span-1">
+                                    <Label className="text-xs text-slate-700 font-semibold">
+                                      GST Slab (%)
+                                    </Label>
+                                    <select
+                                      value={String(Number(service.gstRate) || 0)}
+                                      onChange={(e) =>
+                                        handleServiceChange(
+                                          index,
+                                          "gstRate",
+                                          parseFloat(e.target.value) || 0
+                                        )
+                                      }
+                                      disabled={service.isTaxable === false}
+                                      className={`mt-1 w-full h-9 border rounded-md px-2.5 text-xs focus:ring-2 font-semibold ${
+                                        service.isTaxable === false
+                                          ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                                          : "bg-white border-slate-200 focus:ring-amber-500/20 text-slate-800"
+                                      }`}
+                                    >
+                                      {GST_SLABS.map((slab) => (
+                                        <option key={slab} value={slab}>
+                                          {slab === 0 ? "0% (Exempt)" : `${slab}%`}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div className="sm:col-span-1">
+                                    <Label className="text-xs text-slate-700 font-semibold flex items-center gap-1">
+                                      <Calculator className="h-3 w-3 text-slate-400" />
+                                      Line Total (incl. GST)
+                                    </Label>
+                                    <div className="mt-1 h-9 px-2.5 flex items-center rounded-md bg-gradient-to-r from-primary/5 to-primary/10 border border-primary/20">
+                                      <span className="text-xs font-bold text-primary font-mono tabular-nums">
+                                        {formatCurrency(
+                                          getServiceUnitsAndAmount(service).totalAmount
+                                        )}
+                                      </span>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
@@ -1233,16 +1457,101 @@ export default function CustomersPage() {
                                   </div>
                                 </div>
 
-                                <div className="p-2.5 bg-amber-50 rounded-lg border border-amber-200 text-xs flex items-center justify-between">
+                                <div className="p-2.5 bg-amber-50 rounded-lg border border-amber-200 text-xs flex flex-wrap items-center justify-between gap-2">
                                   <span className="text-amber-950 font-medium">
                                     Formula: {service.units || 0} kWh × ₹{service.rate || 0}
                                   </span>
-                                  <span className="font-bold text-slate-900">
-                                    Total Amount:{" "}
-                                    <span className="text-primary font-mono text-sm ml-1">
-                                      {formatCurrency(calculatedAmount)}
+                                  <div className="font-bold text-slate-900 flex flex-wrap items-center gap-3">
+                                    <span>
+                                      GST {Number(service.gstRate) || 0}%:{" "}
+                                      <span className="font-mono text-emerald-700">
+                                        +{formatCurrency(getServiceUnitsAndAmount(service).gstAmount)}
+                                      </span>
                                     </span>
-                                  </span>
+                                    <span>
+                                      Total:{" "}
+                                      <span className="text-primary font-mono text-sm ml-1">
+                                        {formatCurrency(getServiceUnitsAndAmount(service).totalAmount)}
+                                      </span>
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* GST Section for Electricity - Direct Mode */}
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-amber-200/60">
+                                  <div className="sm:col-span-1 flex items-center justify-between p-2 rounded-lg bg-white border border-amber-200">
+                                    <div className="flex items-center gap-1.5">
+                                      <div className="p-1 rounded bg-sky-100">
+                                        <Receipt className="h-3 w-3 text-sky-600" />
+                                      </div>
+                                      <Label className="text-[11px] font-semibold text-slate-700 cursor-pointer">
+                                        Apply GST
+                                      </Label>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleServiceChange(
+                                          index,
+                                          "isTaxable",
+                                          !(service.isTaxable !== false)
+                                        )
+                                      }
+                                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                                        service.isTaxable !== false
+                                          ? "bg-emerald-600"
+                                          : "bg-slate-300"
+                                      }`}
+                                    >
+                                      <span
+                                        className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform shadow ${
+                                          service.isTaxable !== false
+                                            ? "translate-x-5"
+                                            : "translate-x-1"
+                                        }`}
+                                      />
+                                    </button>
+                                  </div>
+                                  <div className="sm:col-span-1">
+                                    <Label className="text-xs text-slate-700 font-semibold">
+                                      GST Slab (%)
+                                    </Label>
+                                    <select
+                                      value={String(Number(service.gstRate) || 0)}
+                                      onChange={(e) =>
+                                        handleServiceChange(
+                                          index,
+                                          "gstRate",
+                                          parseFloat(e.target.value) || 0
+                                        )
+                                      }
+                                      disabled={service.isTaxable === false}
+                                      className={`mt-1 w-full h-9 border rounded-md px-2.5 text-xs focus:ring-2 font-semibold ${
+                                        service.isTaxable === false
+                                          ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                                          : "bg-white border-slate-200 focus:ring-amber-500/20 text-slate-800"
+                                      }`}
+                                    >
+                                      {GST_SLABS.map((slab) => (
+                                        <option key={slab} value={slab}>
+                                          {slab === 0 ? "0% (Exempt)" : `${slab}%`}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div className="sm:col-span-1">
+                                    <Label className="text-xs text-slate-700 font-semibold flex items-center gap-1">
+                                      <Calculator className="h-3 w-3 text-slate-400" />
+                                      Line Total (incl. GST)
+                                    </Label>
+                                    <div className="mt-1 h-9 px-2.5 flex items-center rounded-md bg-gradient-to-r from-primary/5 to-primary/10 border border-primary/20">
+                                      <span className="text-xs font-bold text-primary font-mono tabular-nums">
+                                        {formatCurrency(
+                                          getServiceUnitsAndAmount(service).totalAmount
+                                        )}
+                                      </span>
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
                             )}
@@ -1252,12 +1561,84 @@ export default function CustomersPage() {
                     );
                   })}
 
-                  <div className="flex justify-end p-3 bg-slate-100 rounded-xl text-xs font-medium text-slate-700">
-                    Total Periodic Amount:{" "}
-                    <span className="font-bold text-primary ml-1 text-base">
-                      {formatCurrency(calculateTotalServiceAmount(form.services))}
-                    </span>
-                  </div>
+                  {(() => {
+                    const totals = calculateTotalServiceAmount(form.services);
+                    const gstEntries = Object.entries(totals.gstBreakdown).sort(
+                      (a, b) => Number(a[0]) - Number(b[0])
+                    );
+                    return (
+                      <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white overflow-hidden shadow-xs">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-0">
+                          <div className="p-4 space-y-2 border-b sm:border-b-0 sm:border-r border-slate-200">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-slate-500 font-medium">Base Subtotal</span>
+                              <span className="font-mono font-semibold text-slate-800 tabular-nums">
+                                {formatCurrency(totals.subtotal)}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-slate-500 font-medium flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                                Services ({form.services.length} line{form.services.length !== 1 ? "s" : ""})
+                              </span>
+                              <span className="font-mono text-slate-500">
+                                {form.services.length} items
+                              </span>
+                            </div>
+                          </div>
+                          <div className="p-4 space-y-2">
+                            <div className="flex items-center gap-1.5 mb-2">
+                              <div className="p-0.5 rounded bg-emerald-100">
+                                <Receipt className="h-2.5 w-2.5 text-emerald-600" />
+                              </div>
+                              <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wide">
+                                GST Breakdown
+                              </span>
+                            </div>
+                            {gstEntries.length === 0 ? (
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="text-slate-400 italic">No GST applicable</span>
+                                <span className="font-mono text-slate-400">—</span>
+                              </div>
+                            ) : (
+                              gstEntries.map(([rate, amt]) => (
+                                <div
+                                  key={rate}
+                                  className="flex items-center justify-between text-xs"
+                                >
+                                  <span className="text-emerald-700 font-medium bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
+                                    CGST+SGST @ {rate}%
+                                  </span>
+                                  <span className="font-mono font-semibold text-emerald-800 tabular-nums">
+                                    + {formatCurrency(amt)}
+                                  </span>
+                                </div>
+                              ))
+                            )}
+                            {totals.totalGst > 0 && (
+                              <div className="flex items-center justify-between text-xs pt-1 border-t border-emerald-100 mt-1">
+                                <span className="font-semibold text-slate-700">Total GST</span>
+                                <span className="font-mono font-bold text-emerald-700 tabular-nums">
+                                  {formatCurrency(totals.totalGst)}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="px-4 py-3 bg-gradient-to-r from-primary/10 via-primary/5 to-primary/10 border-t border-primary/20 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Calculator className="h-4 w-4 text-primary" />
+                            <span className="text-sm font-bold text-slate-800">
+                              Grand Total (Periodic Billing)
+                            </span>
+                          </div>
+                          <span className="text-lg font-extrabold text-primary font-mono tabular-nums">
+                            {formatCurrency(totals.grandTotal)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </div>
@@ -1277,21 +1658,10 @@ export default function CustomersPage() {
             <div className="flex items-center gap-2">
               <Button
                 type="button"
-                variant="outline"
                 size="sm"
-                className="gap-1.5 border-blue-200 text-blue-600 hover:bg-blue-50 hover:text-blue-700 font-medium shadow-2xs"
+                className="px-6 shadow-xs"
                 loading={saving}
-                onClick={() => handleSave(true)}
-              >
-                <FileText className="h-4 w-4 text-blue-600" />
-                Save & Generate Report (PDF)
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                className="px-5 shadow-xs"
-                loading={saving}
-                onClick={() => handleSave(false)}
+                onClick={() => handleSave()}
               >
                 {editing ? "Update Client" : "Save Client"}
               </Button>
@@ -1446,20 +1816,26 @@ export default function CustomersPage() {
                   </span>
                   <div className="space-y-2.5">
                     {viewCustomer.services.map((s, idx) => {
-                      const { units: calculatedUnits, amount: calculatedAmount } =
-                        getServiceUnitsAndAmount(s);
+                      const {
+                        units: calculatedUnits,
+                        amount: calculatedAmount,
+                        gstAmount: calcGst,
+                        totalAmount: calcTotal,
+                      } = getServiceUnitsAndAmount(s);
                       const isElectricity =
                         (s.type || "").toLowerCase() === "electricity";
                       const isReadingMode =
                         isElectricity && s.calculationMode !== "direct";
+                      const gstRate = Number(s.gstRate) || 0;
+                      const taxable = s.isTaxable !== false;
 
                       return (
                         <div
                           key={idx}
-                          className="p-3 bg-slate-50 rounded-lg border border-slate-100 text-xs space-y-1"
+                          className="p-3 bg-slate-50 rounded-lg border border-slate-100 text-xs space-y-2"
                         >
                           <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <Badge
                                 variant={isElectricity ? "warning" : "outline"}
                                 className="capitalize text-[11px]"
@@ -1471,9 +1847,18 @@ export default function CustomersPage() {
                                   Meter Reading Diff
                                 </span>
                               )}
+                              {taxable ? (
+                                <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                  GST {gstRate}%
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-semibold text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded border border-sky-200">
+                                  Exempt
+                                </span>
+                              )}
                             </div>
-                            <span className="font-bold text-slate-900 text-xs font-mono">
-                              {formatCurrency(calculatedAmount)}
+                            <span className="font-bold text-slate-900 text-xs font-mono tabular-nums">
+                              {formatCurrency(calcTotal)}
                             </span>
                           </div>
 
@@ -1494,9 +1879,39 @@ export default function CustomersPage() {
                               </span>
                             </div>
                           )}
+
+                          <div className="flex flex-wrap items-center justify-end gap-3 pt-1 border-t border-slate-200 mt-1">
+                            <span className="text-[11px] text-slate-500">
+                              Base: <span className="font-mono font-medium text-slate-700">{formatCurrency(calculatedAmount)}</span>
+                            </span>
+                            {taxable && (
+                              <span className="text-[11px] text-slate-500">
+                                GST: <span className="font-mono font-medium text-emerald-700">+{formatCurrency(calcGst)}</span>
+                              </span>
+                            )}
+                          </div>
                         </div>
                       );
                     })}
+                    {/* View mode summary footer */}
+                    {(() => {
+                      const totals = calculateTotalServiceAmount(viewCustomer?.services ?? []);
+                      return (
+                        <div className="mt-2 p-3 rounded-lg border border-primary/20 bg-gradient-to-r from-primary/5 to-white">
+                          <div className="flex items-center justify-between text-xs">
+                            <div className="space-y-1">
+                              <div className="text-slate-500">Subtotal: <span className="font-mono font-medium text-slate-700">{formatCurrency(totals.subtotal)}</span></div>
+                              {totals.totalGst > 0 && (
+                                <div className="text-slate-500">Total GST: <span className="font-mono font-medium text-emerald-700">{formatCurrency(totals.totalGst)}</span></div>
+                              )}
+                            </div>
+                            <div className="text-sm font-extrabold text-primary font-mono tabular-nums">
+                              {formatCurrency(totals.grandTotal)}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               )}
@@ -1506,10 +1921,43 @@ export default function CustomersPage() {
               <span className="text-xs font-semibold text-slate-700 block mb-2 flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
                   <Receipt className="h-4 w-4 text-slate-500" />
-                  Client Invoices & Bills ({viewCustomerBills.length})
+                  Client Invoices & Bills {viewBillsLoading ? "" : `(${viewCustomerBills.length})`}
                 </span>
+                {viewBillsLoading && (
+                  <span className="inline-flex items-center gap-1 text-[10px] text-slate-400 font-medium">
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-pulse"></span>
+                    Loading...
+                  </span>
+                )}
               </span>
-              {viewCustomerBills.length === 0 ? (
+              {viewBillsLoading ? (
+                <div className="space-y-2 max-h-44 overflow-y-auto">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between p-2.5 bg-slate-50 rounded-lg border border-slate-100 animate-in fade-in slide-in-from-bottom-1"
+                      style={{ animationDelay: `${i * 60}ms` }}
+                    >
+                      <div className="space-y-1.5 flex-1">
+                        <div className="h-3 w-24 bg-gradient-to-r from-slate-200/80 via-slate-200/50 to-slate-200/80 rounded relative overflow-hidden">
+                          <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.6s_infinite] bg-gradient-to-r from-transparent via-white/70 to-transparent" />
+                        </div>
+                        <div className="h-2.5 w-36 bg-gradient-to-r from-slate-200/70 via-slate-200/40 to-slate-200/70 rounded relative overflow-hidden">
+                          <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.6s_infinite_0.1s] bg-gradient-to-r from-transparent via-white/70 to-transparent" />
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="h-3 w-14 bg-gradient-to-r from-slate-200/80 via-slate-200/50 to-slate-200/80 rounded relative overflow-hidden">
+                          <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.6s_infinite_0.15s] bg-gradient-to-r from-transparent via-white/70 to-transparent" />
+                        </div>
+                        <div className="h-5 w-12 bg-gradient-to-r from-slate-200/70 via-slate-200/40 to-slate-200/70 rounded-full relative overflow-hidden">
+                          <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.6s_infinite_0.2s] bg-gradient-to-r from-transparent via-white/70 to-transparent" />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : viewCustomerBills.length === 0 ? (
                 <div className="p-3 text-center text-xs text-slate-400 bg-slate-50 rounded-lg border border-dashed border-slate-200">
                   No invoices generated yet for this client.
                 </div>

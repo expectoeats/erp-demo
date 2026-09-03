@@ -40,16 +40,27 @@ export default function RateListPage() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ ...empty });
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
-    const r = await fetch(`/api/rate-lists?search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=20`);
-    const d = await r.json();
-    setData(d.data ?? []);
-    setTotal(d.total ?? (d.data?.length ?? 0));
-    setLoading(false);
+    try {
+      const r = await fetch(`/api/rate-lists?search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=20`, { signal });
+      if (!r.ok) { setData([]); setTotal(0); return; }
+      const d = await r.json();
+      setData(d.data ?? []);
+      setTotal(d.total ?? (d.data?.length ?? 0));
+    } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      setData([]); setTotal(0);
+    } finally {
+      setLoading(false);
+    }
   }, [debouncedSearch, page]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const ac = new AbortController();
+    load(ac.signal);
+    return () => ac.abort();
+  }, [load]);
 
   function openAdd() {
     setEditing(null);

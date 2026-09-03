@@ -30,15 +30,26 @@ export default function FinancialYearsPage() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ name: "", startDate: "", endDate: "", isActive: false });
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
-    const r = await fetch("/api/financial-years");
-    const d = await r.json();
-    setData(d.data ?? []);
-    setLoading(false);
+    try {
+      const r = await fetch("/api/financial-years", { signal });
+      if (!r.ok) { setData([]); return; }
+      const d = await r.json();
+      setData(d.data ?? []);
+    } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      setData([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const ac = new AbortController();
+    load(ac.signal);
+    return () => ac.abort();
+  }, [load]);
 
   function openAdd() {
     setEditing(null);

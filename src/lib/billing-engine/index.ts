@@ -59,24 +59,22 @@ export function calculateBill(input: BillingInput): BillingOutput {
     switch (svc.calculationType) {
       case "AREA_RATE":
       case "QUANTITY_RATE":
-        // quantity × rate
         amount = svc.quantity * svc.rate;
         break;
       case "FIXED":
         amount = svc.rate;
         break;
       case "MANUAL":
-        // operator enters the amount directly (stored as manualAmount, quantity=1, rate=amount)
         amount = svc.manualAmount ?? svc.quantity * svc.rate;
         break;
       case "METER":
-        // consumption × rate
         amount = svc.quantity * svc.rate;
         break;
       default:
         amount = svc.quantity * svc.rate;
     }
 
+    amount = parseFloat(amount.toFixed(2));
     const gstAmount = svc.isTaxable ? parseFloat(((amount * svc.gstRate) / 100).toFixed(2)) : 0;
     const totalAmount = parseFloat((amount + gstAmount).toFixed(2));
 
@@ -88,7 +86,7 @@ export function calculateBill(input: BillingInput): BillingOutput {
       quantity: svc.quantity,
       unit: svc.unit,
       rate: svc.rate,
-      amount: parseFloat(amount.toFixed(2)),
+      amount,
       isTaxable: svc.isTaxable,
       gstRate: svc.gstRate,
       gstAmount,
@@ -99,8 +97,15 @@ export function calculateBill(input: BillingInput): BillingOutput {
 
   const subtotal = parseFloat(items.reduce((s, i) => s + i.amount, 0).toFixed(2));
   const discount = parseFloat((input.discount ?? 0).toFixed(2));
-  const taxableAmount = parseFloat((subtotal - discount).toFixed(2));
-  const totalGst = parseFloat(items.reduce((s, i) => s + i.gstAmount, 0).toFixed(2));
+  const cappedDiscount = Math.min(discount, subtotal);
+  const taxableAmount = parseFloat((subtotal - cappedDiscount).toFixed(2));
+
+  const rawTotalGst = parseFloat(items.reduce((s, i) => s + i.gstAmount, 0).toFixed(2));
+  let totalGst = rawTotalGst;
+  if (cappedDiscount > 0 && subtotal > 0 && rawTotalGst > 0) {
+    const taxableBaseRatio = taxableAmount / subtotal;
+    totalGst = parseFloat((rawTotalGst * taxableBaseRatio).toFixed(2));
+  }
   const otherCharges = parseFloat((input.otherCharges ?? 0).toFixed(2));
 
   const rawGrandTotal = taxableAmount + totalGst + otherCharges;
@@ -109,5 +114,5 @@ export function calculateBill(input: BillingInput): BillingOutput {
     : 0;
   const grandTotal = parseFloat((rawGrandTotal + roundOff).toFixed(2));
 
-  return { items, subtotal, discount, taxableAmount, totalGst, otherCharges, roundOff, grandTotal };
+  return { items, subtotal, discount: cappedDiscount, taxableAmount, totalGst, otherCharges, roundOff, grandTotal };
 }
