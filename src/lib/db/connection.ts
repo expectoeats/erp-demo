@@ -20,14 +20,34 @@ export async function connectDB(): Promise<typeof mongoose> {
     throw new Error("Please define MONGODB_URI in environment variables");
   }
 
-  if (cached.conn) return cached.conn;
+  if (cached.conn && mongoose.connection.readyState === 1) {
+    return cached.conn;
+  }
 
   if (!cached.promise) {
-    cached.promise = mongoose.connect(MONGODB_URI, {
+    const opts: mongoose.ConnectOptions = {
       bufferCommands: false,
+      maxPoolSize: 10,
+      minPoolSize: 2,
+      serverSelectionTimeoutMS: 8000,
+      socketTimeoutMS: 45000,
+      connectTimeoutMS: 10000,
+    };
+    cached.promise = mongoose.connect(MONGODB_URI, opts).then((m) => {
+      cached.conn = m;
+      return m;
+    }).catch((err) => {
+      cached.promise = null;
+      throw err;
     });
   }
 
-  cached.conn = await cached.promise;
+  try {
+    cached.conn = await cached.promise;
+  } catch (e) {
+    cached.promise = null;
+    throw e;
+  }
+
   return cached.conn;
 }

@@ -191,17 +191,18 @@ export async function POST(req: NextRequest) {
         }
 
         const amount = parseFloat(((Number(s.rate) || 0) * quantity).toFixed(2));
-        const isTaxable = s.isTaxable !== undefined ? s.isTaxable : true;
-        const gstRate = s.gstRate !== undefined && s.gstRate !== null && !isNaN(Number(s.gstRate)) ? Number(s.gstRate) : 18;
-        const gstAmount = isTaxable ? parseFloat(((amount * gstRate) / 100).toFixed(2)) : 0;
+        const isElectricity = s.type.toLowerCase() === "electricity";
+        const isTaxable = s.isTaxable !== undefined ? s.isTaxable : (!isElectricity);
+        const gstRate = isElectricity ? 0 : (s.gstRate !== undefined && s.gstRate !== null && !isNaN(Number(s.gstRate)) ? Number(s.gstRate) : 18);
+        const gstAmount = isTaxable && gstRate > 0 ? parseFloat(((amount * gstRate) / 100).toFixed(2)) : 0;
         const totalAmount = parseFloat((amount + gstAmount).toFixed(2));
 
         return {
           serviceName: s.type,
           serviceCode: s.type.toUpperCase().slice(0, 4),
-          calculationType: "FIXED",
+          calculationType: isElectricity ? "METER" : "QUANTITY_RATE",
           quantity,
-          unit: s.type.toLowerCase() === "electricity" ? "kWh" : "unit",
+          unit: isElectricity ? "kWh" : "unit",
           rate: Number(s.rate) || 0,
           amount,
           isTaxable,

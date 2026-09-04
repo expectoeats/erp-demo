@@ -59,19 +59,17 @@ export function calculateBill(input: BillingInput): BillingOutput {
     switch (svc.calculationType) {
       case "AREA_RATE":
       case "QUANTITY_RATE":
-        amount = svc.quantity * svc.rate;
-        break;
-      case "FIXED":
-        amount = svc.rate;
-        break;
-      case "MANUAL":
-        amount = svc.manualAmount ?? svc.quantity * svc.rate;
-        break;
       case "METER":
         amount = svc.quantity * svc.rate;
         break;
+      case "FIXED":
+        amount = (svc.quantity && svc.quantity > 0 ? svc.quantity : 1) * svc.rate;
+        break;
+      case "MANUAL":
+        amount = svc.manualAmount !== undefined ? svc.manualAmount : (svc.quantity * svc.rate);
+        break;
       default:
-        amount = svc.quantity * svc.rate;
+        amount = (svc.quantity || 1) * svc.rate;
     }
 
     amount = parseFloat(amount.toFixed(2));

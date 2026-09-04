@@ -160,19 +160,40 @@ export default function GenerateBillPage() {
     setServiceLines((prev) => prev.map((l, i) => i === idx ? { ...l, [key]: value } : l));
   }
 
-  function openMeterModal(idx: number) {
+  async function openMeterModal(idx: number) {
     const line = serviceLines[idx];
-    // try to parse notes like "Meter: 1200 -> 1350" else empty
-    const match = line.notes?.match(/(\d+)\s*->\s*(\d+)/);
-    setMeterModal({ idx, start: match?.[1] ?? "", end: match?.[2] ?? String(line.quantity || "") });
+    const match = line.notes?.match(/(\d+(?:\.\d+)?)\s*(?:->|→)\s*(\d+(?:\.\d+)?)/);
+    let startVal = match?.[1] ?? "";
+    let endVal = match?.[2] ?? (line.quantity ? String(line.quantity) : "");
+
+    // If no startVal entered yet, auto-fetch the previous bill's ending reading
+    if (!startVal && form.customerId) {
+      try {
+        const res = await fetch(
+          `/api/bills?lastReading=true&customerId=${form.customerId}&unitId=${form.unitId || ""}`
+        );
+        const json = await res.json();
+        if (json.data?.previousEndReading !== null && json.data?.previousEndReading !== undefined) {
+          startVal = String(json.data.previousEndReading);
+          toast.info(
+            `Previous meter ending reading (${startVal}) auto-filled as initial reading.`
+          );
+        }
+      } catch {
+        // ignore error silently
+      }
+    }
+
+    setMeterModal({ idx, start: startVal, end: endVal });
   }
+
   function confirmMeterModal() {
     if (meterModal.idx === null) return;
     const s = parseFloat(meterModal.start);
     const e = parseFloat(meterModal.end);
     if (isNaN(s) || isNaN(e)) { toast.error("Start and End readings required"); return; }
     if (e < s) { toast.error("End reading cannot be less than Start reading"); return; }
-    const consumption = e - s;
+    const consumption = parseFloat((e - s).toFixed(2));
     setServiceLines((prev) => prev.map((l, i) => i === meterModal.idx ? { ...l, quantity: consumption, notes: `Meter: ${s} → ${e} = ${consumption} ${l.unit}` } : l));
     setMeterModal({ idx: null, start: "", end: "" });
   }
