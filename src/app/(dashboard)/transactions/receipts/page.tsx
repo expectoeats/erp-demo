@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useMemo, Suspense } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { DataTable, Column } from "@/components/layout/data-table";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -77,7 +77,7 @@ const paymentModeLabels: Record<string, string> = {
   other: "Other",
 };
 
-export default function ReceiptsPage() {
+function ReceiptsPageContent() {
   const searchParams = useSearchParams();
   const preselectedBillId = searchParams.get("billId");
 
@@ -573,5 +573,13 @@ export default function ReceiptsPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function ReceiptsPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading receipts...</div>}>
+      <ReceiptsPageContent />
+    </Suspense>
   );
 }
