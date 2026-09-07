@@ -3,6 +3,8 @@ import type { NextAuthConfig } from "next-auth";
 // Edge-safe config — no DB calls, no bcrypt
 // Used only in middleware for session checking
 export const edgeAuthConfig: NextAuthConfig = {
+  secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
+  trustHost: true,
   providers: [], // providers not needed in middleware
   callbacks: {
     jwt({ token, user }) {
