@@ -6,7 +6,6 @@ import Bill from "@/lib/models/Bill";
 export async function GET(req: NextRequest) {
   const { error } = await requireAuth();
   if (error) return error;
-  await connectDB();
 
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status");

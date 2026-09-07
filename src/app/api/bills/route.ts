@@ -45,7 +45,6 @@ const schema = z.object({
 export async function GET(req: NextRequest) {
   const { error } = await requireAuth();
   if (error) return error;
-  await connectDB();
 
   const { searchParams } = new URL(req.url);
   const search = searchParams.get("search") ?? "";

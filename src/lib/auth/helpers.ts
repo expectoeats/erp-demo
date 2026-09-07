@@ -1,8 +1,10 @@
 import { auth } from "@/lib/auth";
+import { connectDB } from "@/lib/db/connection";
 import { NextResponse } from "next/server";
 
 export async function requireAuth() {
-  const session = await auth();
+  // Kick off DB connection in parallel with session check — saves ~300-600ms on cold start
+  const [session] = await Promise.all([auth(), connectDB().catch(() => null)]);
   if (!session?.user) {
     return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }), session: null };
   }

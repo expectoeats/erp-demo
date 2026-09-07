@@ -218,10 +218,13 @@ export default function BillListPage() {
     try {
       const ok = await attempt();
       if (!ok) {
-        // One retry after a short delay (handles DB cold-start on first request)
-        await new Promise((res) => setTimeout(res, 2000));
-        const retried = await attempt();
-        if (!retried) { setData([]); setTotal(0); }
+        // Retry up to 3 times with increasing delays (handles serverless cold-start races)
+        for (const delay of [1500, 3000, 5000]) {
+          await new Promise((res) => setTimeout(res, delay));
+          const retried = await attempt();
+          if (retried) return;
+        }
+        setData([]); setTotal(0);
       }
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
