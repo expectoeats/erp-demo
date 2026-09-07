@@ -198,15 +198,31 @@ export default function BillListPage() {
   // ── fetch list ────────────────────────────────────────────────────────────
   const load = useCallback(async () => {
     setLoading(true);
+    const attempt = async (): Promise<boolean> => {
+      try {
+        const p = new URLSearchParams({ page: String(page), limit: "20", search: debouncedSearch, status: "paid" });
+        if (monthFilter && monthFilter !== "all") p.set("billingMonth",    monthFilter);
+        if (yearFilter  && yearFilter  !== "all") p.set("billingYear",     yearFilter);
+        if (fyFilter    && fyFilter    !== "all") p.set("financialYearId", fyFilter);
+        const r = await fetch(`/api/bills?${p.toString()}`);
+        if (!r.ok) return false;
+        const d = await r.json();
+        setData(d.data ?? []); setTotal(d.total ?? 0);
+        return true;
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") throw e;
+        return false;
+      }
+    };
+
     try {
-      const p = new URLSearchParams({ page: String(page), limit: "20", search: debouncedSearch, status: "paid" });
-      if (monthFilter && monthFilter !== "all") p.set("billingMonth",    monthFilter);
-      if (yearFilter  && yearFilter  !== "all") p.set("billingYear",     yearFilter);
-      if (fyFilter    && fyFilter    !== "all") p.set("financialYearId", fyFilter);
-      const r = await fetch(`/api/bills?${p.toString()}`);
-      if (!r.ok) { setData([]); setTotal(0); return; }
-      const d = await r.json();
-      setData(d.data ?? []); setTotal(d.total ?? 0);
+      const ok = await attempt();
+      if (!ok) {
+        // One retry after a short delay (handles DB cold-start on first request)
+        await new Promise((res) => setTimeout(res, 2000));
+        const retried = await attempt();
+        if (!retried) { setData([]); setTotal(0); }
+      }
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
       setData([]); setTotal(0);

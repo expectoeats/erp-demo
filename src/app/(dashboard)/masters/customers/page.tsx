@@ -215,15 +215,31 @@ export default function CustomersPage() {
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
+    const attempt = async (): Promise<boolean> => {
+      try {
+        const r = await fetch(
+          `/api/customers?search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=20`,
+          { signal }
+        );
+        if (!r.ok) return false;
+        const d = await r.json();
+        setData(d.data ?? []);
+        setTotal(d.total ?? 0);
+        return true;
+      } catch (e: unknown) {
+        if (e instanceof DOMException && e.name === "AbortError") throw e;
+        return false;
+      }
+    };
+
     try {
-      const r = await fetch(
-        `/api/customers?search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=20`,
-        { signal }
-      );
-      if (!r.ok) { setData([]); setTotal(0); return; }
-      const d = await r.json();
-      setData(d.data ?? []);
-      setTotal(d.total ?? 0);
+      const ok = await attempt();
+      if (!ok) {
+        // One retry after a short delay (handles DB cold-start on first request)
+        await new Promise((res) => setTimeout(res, 2000));
+        const retried = await attempt();
+        if (!retried) { setData([]); setTotal(0); }
+      }
     } catch (e: unknown) {
       if (e instanceof DOMException && e.name === "AbortError") return;
       setData([]); setTotal(0);
