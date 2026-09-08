@@ -45,6 +45,8 @@ const LedgerEntrySchema = new Schema<ILedgerEntry>(
 
 LedgerEntrySchema.index({ customerId: 1, date: 1 });
 LedgerEntrySchema.index({ customerId: 1, financialYearId: 1 });
+LedgerEntrySchema.index({ createdAt: -1 });
+LedgerEntrySchema.index({ date: -1 });
 
 const LedgerEntry: Model<ILedgerEntry> =
   mongoose.models.LedgerEntry ||

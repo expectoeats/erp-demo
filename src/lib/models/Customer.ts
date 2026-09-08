@@ -85,6 +85,13 @@ const CustomerSchema = new Schema<ICustomer>(
 );
 
 CustomerSchema.index({ name: "text", mobile: "text", customerId: "text" });
+// Fast prefix/regex + pagination + active filter
+CustomerSchema.index({ createdAt: -1 });
+CustomerSchema.index({ isActive: 1, createdAt: -1 });
+CustomerSchema.index({ name: 1 });
+CustomerSchema.index({ mobile: 1 });
+CustomerSchema.index({ customerId: 1 });
+CustomerSchema.index({ email: 1 });
 
 const Customer: Model<ICustomer> =
   mongoose.models.Customer ||

@@ -24,13 +24,12 @@ const schema = z.object({
 export async function GET(req: NextRequest) {
   const { error } = await requireAuth();
   if (error) return error;
-  await connectDB();
 
   const { searchParams } = new URL(req.url);
   const customerId = searchParams.get("customerId");
   const billId = searchParams.get("billId");
-  const page = parseInt(searchParams.get("page") ?? "1");
-  const limit = parseInt(searchParams.get("limit") ?? "20");
+  const page = Math.max(1, parseInt(searchParams.get("page") ?? "1") || 1);
+  const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") ?? "20") || 20));
   const skip = (page - 1) * limit;
 
   const query: Record<string, unknown> = {};
@@ -39,6 +38,7 @@ export async function GET(req: NextRequest) {
 
   const [data, total] = await Promise.all([
     Payment.find(query)
+      .select("paymentId customerId unitId billId financialYearId amount paymentDate paymentMode referenceNumber createdAt")
       .populate("customerId", "name customerId")
       .populate("unitId", "unitCode")
       .populate("billId", "invoiceNumber grandTotal")
@@ -49,7 +49,9 @@ export async function GET(req: NextRequest) {
     Payment.countDocuments(query),
   ]);
 
-  return NextResponse.json({ data, total, page, limit });
+  const res = NextResponse.json({ data, total, page, limit });
+  res.headers.set("Cache-Control", "public, s-maxage=5, stale-while-revalidate=30");
+  return res;
 }
 
 export async function POST(req: NextRequest) {

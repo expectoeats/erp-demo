@@ -44,6 +44,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useDebounce } from "@/hooks/use-debounce";
+import { getInstantCache, setInstantCache } from "@/lib/instant-cache";
 
 const MONTHS = [
   "January",
@@ -213,16 +214,16 @@ function calculateTotalServiceAmount(services: CustomerService[] = []): {
 
 export default function BillsPage() {
   const router = useRouter();
-  const [data, setData] = useState<Bill[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<Bill[]>(() => (getInstantCache<{ data: Bill[] }>("cache:new-bills")?.data as Bill[]) ?? []);
+  const [total, setTotal] = useState(() => getInstantCache<{ total: number }>("cache:new-bills")?.total ?? 0);
+  const [loading, setLoading] = useState(() => !getInstantCache("cache:new-bills"));
   const [page, setPage] = useState(1);
   const [invoiceSearch, setInvoiceSearch] = useState("");
   const [clientSearch, setClientSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [tab, setTab] = useState<TabKey>("new");
-  const debouncedInvoiceSearch = useDebounce(invoiceSearch, 400);
-  const debouncedClientSearch = useDebounce(clientSearch, 400);
+  const debouncedInvoiceSearch = useDebounce(invoiceSearch, 150);
+  const debouncedClientSearch = useDebounce(clientSearch, 150);
 
   // Unpaid Bill Edit Modal State
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -275,36 +276,42 @@ export default function BillsPage() {
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
-    const attempt = async (): Promise<boolean> => {
-      try {
-        let url = `/api/bills?page=${page}&limit=20`;
-        if (debouncedInvoiceSearch) url += `&search=${encodeURIComponent(debouncedInvoiceSearch)}`;
-        if (debouncedClientSearch) url += `&clientSearch=${encodeURIComponent(debouncedClientSearch)}`;
-        if (effectiveStatus) url += `&status=${encodeURIComponent(effectiveStatus)}`;
-        const r = await fetch(url, { signal });
-        if (!r.ok) return false;
-        const d = await r.json();
-        setData(d.data ?? []);
-        setTotal(d.total ?? 0);
-        return true;
-      } catch (e: unknown) {
-        if (e instanceof DOMException && e.name === "AbortError") throw e;
-        return false;
-      }
-    };
     try {
-      const ok = await attempt();
-      if (!ok) {
-        for (const delay of [1500, 3000, 5000]) {
-          await new Promise((res) => setTimeout(res, delay));
-          const retried = await attempt();
-          if (retried) return;
-        }
-        setData([]); setTotal(0);
+      let url = `/api/bills?page=${page}&limit=20`;
+      if (debouncedInvoiceSearch) url += `&search=${encodeURIComponent(debouncedInvoiceSearch)}`;
+      if (debouncedClientSearch) url += `&clientSearch=${encodeURIComponent(debouncedClientSearch)}`;
+      if (effectiveStatus) url += `&status=${encodeURIComponent(effectiveStatus)}`;
+      const r = await fetch(url, { signal, cache: "no-store" } as RequestInit);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      const nd = d.data ?? [];
+      const nt = d.total ?? 0;
+      setData(nd);
+      setTotal(nt);
+      if (!debouncedInvoiceSearch && !debouncedClientSearch && page === 1 && effectiveStatus === "unpaid,overdue") {
+        setInstantCache("cache:new-bills", { data: nd, total: nt });
       }
     } catch (e: unknown) {
-      if (e instanceof DOMException && e.name === "AbortError") return;
-      setData([]); setTotal(0);
+      if (e instanceof DOMException && (e as DOMException).name === "AbortError") return;
+      try {
+        await new Promise((res) => setTimeout(res, 300));
+        let url2 = `/api/bills?page=${page}&limit=20`;
+        if (debouncedInvoiceSearch) url2 += `&search=${encodeURIComponent(debouncedInvoiceSearch)}`;
+        if (debouncedClientSearch) url2 += `&clientSearch=${encodeURIComponent(debouncedClientSearch)}`;
+        if (effectiveStatus) url2 += `&status=${encodeURIComponent(effectiveStatus)}`;
+        const r2 = await fetch(url2, { signal, cache: "no-store" } as RequestInit);
+        if (r2.ok) {
+          const d2 = await r2.json();
+          const nd2 = d2.data ?? [];
+          const nt2 = d2.total ?? 0;
+          setData(nd2); setTotal(nt2);
+          if (!debouncedInvoiceSearch && !debouncedClientSearch && page === 1 && effectiveStatus === "unpaid,overdue") {
+            setInstantCache("cache:new-bills", { data: nd2, total: nt2 });
+          }
+          return;
+        }
+      } catch {}
+      // keep previous data — no empty flash
     } finally {
       setLoading(false);
     }

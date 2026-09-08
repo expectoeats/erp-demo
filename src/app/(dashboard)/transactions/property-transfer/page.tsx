@@ -47,7 +47,7 @@ export default function PropertyTransferPage() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
-  const debouncedSearch = useDebounce(search, 400);
+  const debouncedSearch = useDebounce(search, 150);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(emptyForm);

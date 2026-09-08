@@ -50,7 +50,7 @@ export default function AuditLogsPage() {
   const [search, setSearch] = useState("");
   const [actionFilter, setActionFilter] = useState("");
   const [entityFilter, setEntityFilter] = useState("");
-  const debouncedSearch = useDebounce(search, 400);
+  const debouncedSearch = useDebounce(search, 150);
 
   const load = useCallback(async () => {
     setLoading(true);

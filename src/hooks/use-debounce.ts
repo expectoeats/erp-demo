@@ -12,3 +12,8 @@ export function useDebounce<T>(value: T, delay: number): T {
 
   return debounced;
 }
+
+// 150ms optimized debounce for 0.2s target
+export function useDebouncedValue<T>(value: T, delay = 150): T {
+  return useDebounce(value, delay);
+}

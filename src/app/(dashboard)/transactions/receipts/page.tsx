@@ -36,6 +36,7 @@ import {
 import Link from "next/link";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useSearchParams } from "next/navigation";
+import { getInstantCache, setInstantCache } from "@/lib/instant-cache";
 
 interface CustomerRef {
   _id: string;
@@ -81,12 +82,12 @@ function ReceiptsPageContent() {
   const searchParams = useSearchParams();
   const preselectedBillId = searchParams.get("billId");
 
-  const [data, setData] = useState<Receipt[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<Receipt[]>(() => (getInstantCache<{ data: Receipt[] }>("cache:receipts:list")?.data as Receipt[]) ?? []);
+  const [total, setTotal] = useState(() => getInstantCache<{ total: number }>("cache:receipts:list")?.total ?? 0);
+  const [loading, setLoading] = useState(() => !getInstantCache("cache:receipts:list"));
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
-  const debouncedSearch = useDebounce(search, 400);
+  const debouncedSearch = useDebounce(search, 150);
 
   // Unpaid bills for recording payments
   const [unpaidBills, setUnpaidBills] = useState<BillRef[]>([]);
@@ -112,13 +113,17 @@ function ReceiptsPageContent() {
     setLoading(true);
     try {
       const r = await fetch(
-        `/api/receipts?page=${page}&limit=20&search=${encodeURIComponent(debouncedSearch)}`
+        `/api/receipts?page=${page}&limit=20&search=${encodeURIComponent(debouncedSearch)}`,
+        { cache: "no-store" } as RequestInit
       );
       const d = await r.json();
-      setData(d.data ?? []);
-      setTotal(d.total ?? 0);
+      const nd = d.data ?? [];
+      const nt = d.total ?? 0;
+      setData(nd);
+      setTotal(nt);
+      if (!debouncedSearch && page === 1) setInstantCache("cache:receipts:list", { data: nd, total: nt });
     } catch {
-      toast.error("Failed to load receipts");
+      // keep previous data — no empty flash
     } finally {
       setLoading(false);
     }

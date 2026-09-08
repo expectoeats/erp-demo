@@ -27,16 +27,19 @@ export async function GET(req: NextRequest) {
   const limit = parseInt(searchParams.get("limit") ?? "20");
   const skip = (page - 1) * limit;
 
+  const esc = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const query = search
-    ? { $or: [{ name: new RegExp(search, "i") }, { locationId: new RegExp(search, "i") }] }
+    ? { $or: [{ name: { $regex: esc, $options: "i" } }, { locationId: { $regex: esc, $options: "i" } }] }
     : {};
 
   const [data, total] = await Promise.all([
-    Location.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+    Location.find(query).select("locationId name city state isActive createdAt").sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
     Location.countDocuments(query),
   ]);
 
-  return NextResponse.json({ data, total, page, limit });
+  const res = NextResponse.json({ data, total, page, limit });
+  res.headers.set("Cache-Control", "public, s-maxage=10, stale-while-revalidate=30");
+  return res;
 }
 
 export async function POST(req: NextRequest) {

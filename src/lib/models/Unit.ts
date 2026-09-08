@@ -48,6 +48,13 @@ const UnitSchema = new Schema<IUnit>(
 );
 
 UnitSchema.index({ unitId: "text", unitCode: "text" });
+UnitSchema.index({ createdAt: -1 });
+UnitSchema.index({ status: 1 });
+UnitSchema.index({ locationId: 1 });
+UnitSchema.index({ subLocationId: 1 });
+UnitSchema.index({ currentOwnerId: 1 });
+UnitSchema.index({ unitCode: 1 });
+UnitSchema.index({ unitId: 1 });
 
 const Unit: Model<IUnit> =
   mongoose.models.Unit || mongoose.model<IUnit>("Unit", UnitSchema);

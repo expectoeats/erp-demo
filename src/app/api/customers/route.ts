@@ -59,34 +59,41 @@ export async function GET(req: NextRequest) {
   if (error) return error;
 
   const { searchParams } = new URL(req.url);
-  const search = searchParams.get("search") ?? "";
-  const page = parseInt(searchParams.get("page") ?? "1");
-  const limit = parseInt(searchParams.get("limit") ?? "20");
+  const search = searchParams.get("search")?.trim() ?? "";
+  const page = Math.max(1, parseInt(searchParams.get("page") ?? "1") || 1);
+  const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") ?? "20") || 20));
   const skip = (page - 1) * limit;
 
+  // Escaped anchored regex for index-friendly prefix search + fallback contains
+  const esc = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const query = search
     ? {
         $or: [
-          { name: new RegExp(search, "i") },
-          { mobile: new RegExp(search, "i") },
-          { customerId: new RegExp(search, "i") },
-          { email: new RegExp(search, "i") },
+          { name: { $regex: esc, $options: "i" } },
+          { mobile: { $regex: esc, $options: "i" } },
+          { customerId: { $regex: esc, $options: "i" } },
+          { email: { $regex: esc, $options: "i" } },
         ],
       }
     : {};
 
   const [data, total] = await Promise.all([
     Customer.find(query)
-      .populate("orgId", "companyName orgCode locationId")
-      .populate("billingLocationId", "name locationId")
+      .select("customerId name mobile email isActive orgId billingType billingStartDate nextBillingDate billingLocationId createdAt")
+      .populate("orgId", "companyName orgCode")
+      .populate("billingLocationId", "name")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .lean(),
+      .lean()
+      .hint(search ? undefined : { createdAt: -1 }),
     Customer.countDocuments(query),
   ]);
 
-  return NextResponse.json({ data, total, page, limit });
+  const res = NextResponse.json({ data, total, page, limit });
+  // 0.2s target: allow CDN / browser to cache for 5s, stale-while-revalidate 30s
+  res.headers.set("Cache-Control", "public, s-maxage=5, stale-while-revalidate=30");
+  return res;
 }
 
 export async function POST(req: NextRequest) {

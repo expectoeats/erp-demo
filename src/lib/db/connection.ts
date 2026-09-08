@@ -25,13 +25,13 @@ export async function connectDB(): Promise<typeof mongoose> {
 
   if (!cached.promise) {
     const opts: mongoose.ConnectOptions = {
-      // bufferCommands: true (default) — lets Mongoose queue operations while
-      // the connection is being established instead of throwing immediately.
       maxPoolSize: 10,
-      minPoolSize: 1,
-      serverSelectionTimeoutMS: 15000, // give Atlas free-tier enough warm-up time
-      socketTimeoutMS: 45000,
-      connectTimeoutMS: 15000,
+      minPoolSize: 2,
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 30000,
+      connectTimeoutMS: 5000,
+      heartbeatFrequencyMS: 10000,
+      retryWrites: true,
     };
     cached.promise = mongoose.connect(MONGODB_URI, opts).then((m) => {
       cached.conn = m;

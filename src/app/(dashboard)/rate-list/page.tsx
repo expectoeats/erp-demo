@@ -75,7 +75,7 @@ export default function RateListMasterPage() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
-  const debouncedSearch = useDebounce(search, 400);
+  const debouncedSearch = useDebounce(search, 150);
 
   const [locations, setLocations] = useState<Location[]>([]);
   const [subLocations, setSubLocations] = useState<SubLocation[]>([]);

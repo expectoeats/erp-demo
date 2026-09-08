@@ -106,7 +106,7 @@ export default function ClientLedgerPage() {
   const [customers, setCustomers]           = useState<Customer[]>([]);
   const [customersLoading, setCustomersLoading] = useState(true);
   const [clientSearch, setClientSearch]     = useState("");
-  const debouncedSearch                     = useDebounce(clientSearch, 300);
+  const debouncedSearch                     = useDebounce(clientSearch, 150);
 
   // Selected client & ledger
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);

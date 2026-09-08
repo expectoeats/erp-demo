@@ -45,6 +45,7 @@ import {
 import { useDebounce } from "@/hooks/use-debounce";
 import { generateClientReportPDF } from "@/lib/utils/client-report";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { getInstantCache, setInstantCache } from "@/lib/instant-cache";
 
 interface CustomerService {
   type: string;
@@ -229,12 +230,21 @@ function validateBillingStartDateFE(dateStr: string, fyStartIso: string): string
 }
 
 export default function CustomersPage() {
-  const [data, setData] = useState<Customer[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<Customer[]>(() => {
+    const cached = getInstantCache<{ data: Customer[]; total: number }>("cache:clients:list");
+    return (cached?.data as Customer[]) ?? [];
+  });
+  const [total, setTotal] = useState(() => {
+    const cached = getInstantCache<{ data: Customer[]; total: number }>("cache:clients:list");
+    return cached?.total ?? 0;
+  });
+  const [loading, setLoading] = useState(() => {
+    const cached = getInstantCache("cache:clients:list");
+    return !cached; // if cache exists, no loading flash
+  });
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
-  const debouncedSearch = useDebounce(search, 400);
+  const debouncedSearch = useDebounce(search, 150);
 
   const [open, setOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
@@ -256,38 +266,40 @@ export default function CustomersPage() {
   const [startDateError, setStartDateError] = useState<string>("");
 
   const load = useCallback(async (signal?: AbortSignal) => {
+    // keep previous data visible — spinner shows but table stays
     setLoading(true);
-    const attempt = async (): Promise<boolean> => {
-      try {
-        const r = await fetch(
-          `/api/customers?search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=20`,
-          { signal }
-        );
-        if (!r.ok) return false;
-        const d = await r.json();
-        setData(d.data ?? []);
-        setTotal(d.total ?? 0);
-        return true;
-      } catch (e: unknown) {
-        if (e instanceof DOMException && e.name === "AbortError") throw e;
-        return false;
-      }
-    };
-
     try {
-      const ok = await attempt();
-      if (!ok) {
-        // Retry up to 3 times with increasing delays (handles serverless cold-start races)
-        for (const delay of [1500, 3000, 5000]) {
-          await new Promise((res) => setTimeout(res, delay));
-          const retried = await attempt();
-          if (retried) return;
-        }
-        setData([]); setTotal(0);
-      }
+      const r = await fetch(
+        `/api/customers?search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=20`,
+        { signal, cache: "no-store" } as RequestInit
+      );
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      const nextData = d.data ?? [];
+      const nextTotal = d.total ?? 0;
+      setData(nextData);
+      setTotal(nextTotal);
+      // cache for instant next load (only for default list without search)
+      if (!debouncedSearch && page === 1) setInstantCache("cache:clients:list", { data: nextData, total: nextTotal });
     } catch (e: unknown) {
       if (e instanceof DOMException && e.name === "AbortError") return;
-      setData([]); setTotal(0);
+      try {
+        await new Promise((res) => setTimeout(res, 300));
+        const r2 = await fetch(
+          `/api/customers?search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=20`,
+          { signal, cache: "no-store" } as RequestInit
+        );
+        if (r2.ok) {
+          const d2 = await r2.json();
+          const nd = d2.data ?? [];
+          const nt = d2.total ?? 0;
+          setData(nd);
+          setTotal(nt);
+          if (!debouncedSearch && page === 1) setInstantCache("cache:clients:list", { data: nd, total: nt });
+          return;
+        }
+      } catch {}
+      // keep previous data on error — never flash empty
     } finally {
       setLoading(false);
     }
@@ -605,6 +617,7 @@ export default function CustomersPage() {
       }
 
       setOpen(false);
+      try { sessionStorage.removeItem("dashboard:stats"); sessionStorage.removeItem("dashboard:recent-bills"); } catch {}
       load();
     } catch {
       toast.error("Something went wrong");

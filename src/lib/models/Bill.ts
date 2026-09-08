@@ -105,10 +105,21 @@ const BillSchema = new Schema<IBill>(
 
 BillSchema.index({ invoiceNumber: 1 });
 BillSchema.index({ customerId: 1, status: 1 });
+BillSchema.index({ customerId: 1 });
 BillSchema.index({ unitId: 1 });
 BillSchema.index({ financialYearId: 1, billingMonth: 1 });
+BillSchema.index({ status: 1 });
+BillSchema.index({ createdAt: -1 });
+BillSchema.index({ invoiceDate: -1 });
+BillSchema.index({ invoiceDate: 1 });
+BillSchema.index({ billingYear: 1, billingMonth: 1 });
+BillSchema.index({ grandTotal: 1 });
+BillSchema.index({ outstandingAmount: 1 });
 // Historical immutability: one bill per unit per month-year (prevents overwrite)
 BillSchema.index({ unitId: 1, billingMonth: 1, billingYear: 1 }, { unique: true, sparse: true });
+// Compound for paginated search + sort
+BillSchema.index({ status: 1, createdAt: -1 });
+BillSchema.index({ financialYearId: 1, createdAt: -1 });
 
 const Bill: Model<IBill> =
   mongoose.models.Bill || mongoose.model<IBill>("Bill", BillSchema);

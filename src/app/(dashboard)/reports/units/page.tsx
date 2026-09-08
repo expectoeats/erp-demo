@@ -24,7 +24,7 @@ export default function UnitsReportPage() {
   const [data, setData] = useState<UnitEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const debouncedSearch = useDebounce(search, 400);
+  const debouncedSearch = useDebounce(search, 150);
 
   const load = useCallback(async () => {
     setLoading(true);

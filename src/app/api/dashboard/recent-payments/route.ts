@@ -10,6 +10,7 @@ export async function GET() {
   await connectDB();
 
   const payments = await Payment.find()
+    .select("paymentId amount paymentMode paymentDate customerId")
     .sort({ createdAt: -1 })
     .limit(8)
     .populate("customerId", "name")
@@ -24,5 +25,7 @@ export async function GET() {
     paymentDate: p.paymentDate,
   }));
 
-  return NextResponse.json({ data });
+  const res = NextResponse.json({ data });
+  res.headers.set("Cache-Control", "public, s-maxage=5, stale-while-revalidate=10");
+  return res;
 }

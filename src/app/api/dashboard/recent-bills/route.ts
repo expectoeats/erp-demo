@@ -10,6 +10,7 @@ export async function GET() {
   await connectDB();
 
   const bills = await Bill.find()
+    .select("invoiceNumber grandTotal status invoiceDate customerId unitId")
     .sort({ createdAt: -1 })
     .limit(8)
     .populate("customerId", "name")
@@ -26,5 +27,7 @@ export async function GET() {
     invoiceDate: b.invoiceDate,
   }));
 
-  return NextResponse.json({ data });
+  const res = NextResponse.json({ data });
+  res.headers.set("Cache-Control", "public, s-maxage=5, stale-while-revalidate=10");
+  return res;
 }

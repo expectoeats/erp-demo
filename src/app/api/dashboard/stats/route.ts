@@ -7,7 +7,17 @@ import Bill from "@/lib/models/Bill";
 import Payment from "@/lib/models/Payment";
 import Receipt from "@/lib/models/Receipt";
 
+// In-memory cache for 0.2s target — 10s TTL
+let cache: { data: unknown; ts: number } | null = null;
+const TTL = 10_000;
+
 export async function GET() {
+  if (cache && Date.now() - cache.ts < TTL) {
+    const res = NextResponse.json(cache.data);
+    res.headers.set("Cache-Control", "public, s-maxage=5, stale-while-revalidate=10");
+    res.headers.set("X-Cache", "HIT");
+    return res;
+  }
   const { error } = await requireAuth();
   if (error) return error;
 
@@ -51,7 +61,7 @@ export async function GET() {
     Receipt.countDocuments(),
   ]);
 
-  return NextResponse.json({
+  const payload = {
     data: {
       totalCustomers,
       totalUnits,
@@ -63,5 +73,10 @@ export async function GET() {
       overdueAmount: overdueAgg[0]?.total ?? 0,
       totalReceipts,
     },
-  });
+  };
+  cache = { data: payload, ts: Date.now() };
+  const res = NextResponse.json(payload);
+  res.headers.set("Cache-Control", "public, s-maxage=5, stale-while-revalidate=30");
+  res.headers.set("X-Cache", "MISS");
+  return res;
 }

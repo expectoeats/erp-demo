@@ -51,14 +51,29 @@ export function DashboardStats() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const abort = new AbortController();
     let mounted = true;
-    fetch("/api/dashboard/stats", { signal: abort.signal })
+    // instant cache hit from sessionStorage if available
+    try {
+      const cached = sessionStorage.getItem("dashboard:stats");
+      if (cached) {
+        const { data, ts } = JSON.parse(cached);
+        if (Date.now() - ts < 5000) {
+          setStats(data);
+          setLoading(false);
+        }
+      }
+    } catch {}
+    fetch("/api/dashboard/stats", { cache: "no-store" } as RequestInit)
       .then((r) => (r.ok ? r.json() : { data: null }))
-      .then((d) => { if (mounted) setStats(d.data ?? null); })
-      .catch((e) => { if (e instanceof DOMException && e.name === "AbortError") return; })
+      .then((d) => {
+        if (mounted) {
+          setStats(d.data ?? null);
+          try { sessionStorage.setItem("dashboard:stats", JSON.stringify({ data: d.data ?? null, ts: Date.now() })); } catch {}
+        }
+      })
+      .catch(() => {})
       .finally(() => { if (mounted) setLoading(false); });
-    return () => { mounted = false; abort.abort(); };
+    return () => { mounted = false; };
   }, []);
 
   if (loading) {

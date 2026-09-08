@@ -101,7 +101,7 @@ export default function OrganisationSetupPage() {
   const [editing, setEditing] = useState<OrgSettingsData | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [search, setSearch] = useState("");
-  const debouncedSearch = useDebounce(search, 300);
+  const debouncedSearch = useDebounce(search, 150);
 
   const load = useCallback(async () => {
     setLoading(true);

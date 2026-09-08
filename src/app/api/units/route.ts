@@ -24,20 +24,22 @@ const schema = z.object({
 export async function GET(req: NextRequest) {
   const { error } = await requireAuth();
   if (error) return error;
-  await connectDB();
 
   const { searchParams } = new URL(req.url);
-  const search = searchParams.get("search") ?? "";
+  const search = searchParams.get("search")?.trim() ?? "";
   const locationId = searchParams.get("locationId");
   const subLocationId = searchParams.get("subLocationId");
   const status = searchParams.get("status");
   const customerId = searchParams.get("customerId");
-  const page = parseInt(searchParams.get("page") ?? "1");
-  const limit = parseInt(searchParams.get("limit") ?? "20");
+  const page = Math.max(1, parseInt(searchParams.get("page") ?? "1") || 1);
+  const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") ?? "20") || 20));
   const skip = (page - 1) * limit;
 
   const query: Record<string, unknown> = {};
-  if (search) query.$or = [{ unitCode: new RegExp(search, "i") }, { unitId: new RegExp(search, "i") }];
+  if (search) {
+    const esc = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    query.$or = [{ unitCode: { $regex: esc, $options: "i" } }, { unitId: { $regex: esc, $options: "i" } }];
+  }
   if (locationId) query.locationId = locationId;
   if (subLocationId) query.subLocationId = subLocationId;
   if (status) query.status = status;
@@ -45,10 +47,10 @@ export async function GET(req: NextRequest) {
 
   const [data, total] = await Promise.all([
     Unit.find(query)
+      .select("unitId unitCode currentOwnerId locationId subLocationId propertyType area status createdAt")
       .populate("currentOwnerId", "name customerId mobile")
-      .populate("locationId", "name locationId")
-      .populate("subLocationId", "name subLocationId")
-      .populate("services", "name code")
+      .populate("locationId", "name")
+      .populate("subLocationId", "name")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -56,7 +58,9 @@ export async function GET(req: NextRequest) {
     Unit.countDocuments(query),
   ]);
 
-  return NextResponse.json({ data, total, page, limit });
+  const res = NextResponse.json({ data, total, page, limit });
+  res.headers.set("Cache-Control", "public, s-maxage=5, stale-while-revalidate=30");
+  return res;
 }
 
 export async function POST(req: NextRequest) {

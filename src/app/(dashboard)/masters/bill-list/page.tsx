@@ -180,7 +180,7 @@ export default function BillListPage() {
   const [fyFilter,       setFyFilter]       = useState("");
   const [financialYears, setFinancialYears] = useState<FinancialYear[]>([]);
   const [stats,          setStats]          = useState<BillStats | null>(null);
-  const debouncedSearch = useDebounce(search, 400);
+  const debouncedSearch = useDebounce(search, 150);
 
   // modal
   const [modalOpen,      setModalOpen]      = useState(false);
@@ -205,36 +205,25 @@ export default function BillListPage() {
   // ── fetch list ────────────────────────────────────────────────────────────
   const load = useCallback(async () => {
     setLoading(true);
-    const attempt = async (): Promise<boolean> => {
-      try {
-        const p = new URLSearchParams({ page: String(page), limit: "20", search: debouncedSearch, status: "paid" });
-        if (monthFilter && monthFilter !== "all") p.set("billingMonth",    monthFilter);
-        if (yearFilter  && yearFilter  !== "all") p.set("billingYear",     yearFilter);
-        if (fyFilter    && fyFilter    !== "all") p.set("financialYearId", fyFilter);
-        const r = await fetch(`/api/bills?${p.toString()}`);
-        if (!r.ok) return false;
-        const d = await r.json();
-        setData(d.data ?? []); setTotal(d.total ?? 0);
-        return true;
-      } catch (e) {
-        if (e instanceof DOMException && e.name === "AbortError") throw e;
-        return false;
-      }
-    };
-
     try {
-      const ok = await attempt();
-      if (!ok) {
-        // Retry up to 3 times with increasing delays (handles serverless cold-start races)
-        for (const delay of [1500, 3000, 5000]) {
-          await new Promise((res) => setTimeout(res, delay));
-          const retried = await attempt();
-          if (retried) return;
-        }
-        setData([]); setTotal(0);
-      }
-    } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") return;
+      const p = new URLSearchParams({ page: String(page), limit: "20", search: debouncedSearch, status: "paid" });
+      if (monthFilter && monthFilter !== "all") p.set("billingMonth",    monthFilter);
+      if (yearFilter  && yearFilter  !== "all") p.set("billingYear",     yearFilter);
+      if (fyFilter    && fyFilter    !== "all") p.set("financialYearId", fyFilter);
+      const r = await fetch(`/api/bills?${p.toString()}`, { cache: "no-store" } as RequestInit);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      setData(d.data ?? []); setTotal(d.total ?? 0);
+    } catch {
+      try {
+        await new Promise((res) => setTimeout(res, 300));
+        const p2 = new URLSearchParams({ page: String(page), limit: "20", search: debouncedSearch, status: "paid" });
+        if (monthFilter && monthFilter !== "all") p2.set("billingMonth",    monthFilter);
+        if (yearFilter  && yearFilter  !== "all") p2.set("billingYear",     yearFilter);
+        if (fyFilter    && fyFilter    !== "all") p2.set("financialYearId", fyFilter);
+        const r2 = await fetch(`/api/bills?${p2.toString()}`, { cache: "no-store" } as RequestInit);
+        if (r2.ok) { const d2 = await r2.json(); setData(d2.data ?? []); setTotal(d2.total ?? 0); return; }
+      } catch {}
       setData([]); setTotal(0);
     } finally {
       setLoading(false);

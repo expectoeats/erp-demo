@@ -29,14 +29,25 @@ export function RecentBills() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const abort = new AbortController();
     let mounted = true;
-    fetch("/api/dashboard/recent-bills", { signal: abort.signal })
+    try {
+      const cached = sessionStorage.getItem("dashboard:recent-bills");
+      if (cached) {
+        const { data, ts } = JSON.parse(cached);
+        if (Date.now() - ts < 5000) { setBills(data); setLoading(false); }
+      }
+    } catch {}
+    fetch("/api/dashboard/recent-bills", { cache: "no-store" } as RequestInit)
       .then((r) => (r.ok ? r.json() : { data: [] }))
-      .then((d) => { if (mounted) setBills(d.data ?? []); })
-      .catch((e) => { if (e instanceof DOMException && e.name === "AbortError") return; })
+      .then((d) => {
+        if (mounted) {
+          setBills(d.data ?? []);
+          try { sessionStorage.setItem("dashboard:recent-bills", JSON.stringify({ data: d.data ?? [], ts: Date.now() })); } catch {}
+        }
+      })
+      .catch(() => {})
       .finally(() => { if (mounted) setLoading(false); });
-    return () => { mounted = false; abort.abort(); };
+    return () => { mounted = false; };
   }, []);
 
   return (

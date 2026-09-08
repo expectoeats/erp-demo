@@ -11,12 +11,24 @@ const schema = z.object({
   isActive: z.boolean().optional(),
 });
 
+let fyCache: { data: unknown; ts: number } | null = null;
 export async function GET() {
+  if (fyCache && Date.now() - fyCache.ts < 10000) {
+    const res = NextResponse.json(fyCache.data);
+    res.headers.set("Cache-Control", "public, s-maxage=10, stale-while-revalidate=30");
+    res.headers.set("X-Cache", "HIT");
+    return res;
+  }
   const { error } = await requireAuth();
   if (error) return error;
   await connectDB();
-  const years = await FinancialYear.find().sort({ startDate: -1 }).lean();
-  return NextResponse.json({ data: years });
+  const years = await FinancialYear.find().select("name startDate endDate isActive isClosed").sort({ startDate: -1 }).lean();
+  const payload = { data: years };
+  fyCache = { data: payload, ts: Date.now() };
+  const res = NextResponse.json(payload);
+  res.headers.set("Cache-Control", "public, s-maxage=10, stale-while-revalidate=30");
+  res.headers.set("X-Cache", "MISS");
+  return res;
 }
 
 export async function POST(req: NextRequest) {

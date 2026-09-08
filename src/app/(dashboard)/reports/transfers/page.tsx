@@ -25,7 +25,7 @@ export default function TransfersReportPage() {
   const [data, setData] = useState<TransferEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const debouncedSearch = useDebounce(search, 400);
+  const debouncedSearch = useDebounce(search, 150);
 
   const load = useCallback(async () => {
     setLoading(true);

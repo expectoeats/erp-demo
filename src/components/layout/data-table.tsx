@@ -83,7 +83,7 @@ export function DataTable<T extends Record<string, unknown>>({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading ? (
+            {loading && data.length === 0 ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i} className="animate-in fade-in slide-in-from-bottom-1" style={{ animationDelay: `${i * 50}ms` }}>
                   {columns.map((col, colIdx) => {
@@ -126,17 +126,29 @@ export function DataTable<T extends Record<string, unknown>>({
                 </TableCell>
               </TableRow>
             ) : (
-              data.map((row, rowIdx) => (
-                <TableRow key={String(row[keyField] ?? rowIdx)}>
-                  {columns.map((col) => (
-                    <TableCell key={col.key} className={cn("text-xs", col.className)}>
-                      {col.render
-                        ? col.render(row[col.key], row, rowIdx)
-                        : String(row[col.key] ?? "")}
+              <>
+                {data.map((row, rowIdx) => (
+                  <TableRow key={String(row[keyField] ?? rowIdx)} className={loading ? "opacity-60" : ""}>
+                    {columns.map((col) => (
+                      <TableCell key={col.key} className={cn("text-xs", col.className)}>
+                        {col.render
+                          ? col.render(row[col.key], row, rowIdx)
+                          : String(row[col.key] ?? "")}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+                {loading && (
+                  <TableRow>
+                    <TableCell colSpan={columns.length} className="text-center py-2">
+                      <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                        <span className="h-3 w-3 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin" />
+                        Updating…
+                      </span>
                     </TableCell>
-                  ))}
-                </TableRow>
-              ))
+                  </TableRow>
+                )}
+              </>
             )}
           </TableBody>
         </Table>

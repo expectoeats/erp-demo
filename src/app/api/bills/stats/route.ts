@@ -3,7 +3,16 @@ import { connectDB } from "@/lib/db/connection";
 import { requireAuth } from "@/lib/auth/helpers";
 import Bill from "@/lib/models/Bill";
 
+let statsCache = new Map<string, { data: unknown; ts: number }>();
 export async function GET(req: NextRequest) {
+  const url = req.url;
+  const cached = statsCache.get(url);
+  if (cached && Date.now() - cached.ts < 10000) {
+    const res = NextResponse.json(cached.data);
+    res.headers.set("Cache-Control", "public, s-maxage=5, stale-while-revalidate=30");
+    res.headers.set("X-Cache", "HIT");
+    return res;
+  }
   const { error } = await requireAuth();
   if (error) return error;
 
@@ -37,7 +46,7 @@ export async function GET(req: NextRequest) {
     },
   ]);
 
-  return NextResponse.json({
+  const payload = {
     data: stats ?? {
       totalBills: 0,
       unpaidCount: 0,
@@ -49,5 +58,15 @@ export async function GET(req: NextRequest) {
       totalPaid: 0,
       totalOutstanding: 0,
     },
-  });
+  };
+  statsCache.set(url, { data: payload, ts: Date.now() });
+  // prune
+  if (statsCache.size > 50) {
+    const first = statsCache.keys().next().value as string;
+    statsCache.delete(first);
+  }
+  const res = NextResponse.json(payload);
+  res.headers.set("Cache-Control", "public, s-maxage=5, stale-while-revalidate=30");
+  res.headers.set("X-Cache", "MISS");
+  return res;
 }

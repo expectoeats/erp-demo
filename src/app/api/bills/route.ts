@@ -47,8 +47,8 @@ export async function GET(req: NextRequest) {
   if (error) return error;
 
   const { searchParams } = new URL(req.url);
-  const search = searchParams.get("search") ?? "";
-  const clientSearch = searchParams.get("clientSearch") ?? "";
+  const search = searchParams.get("search")?.trim() ?? "";
+  const clientSearch = searchParams.get("clientSearch")?.trim() ?? "";
   const customerId = searchParams.get("customerId");
   const unitId = searchParams.get("unitId");
   const status = searchParams.get("status");
@@ -56,17 +56,18 @@ export async function GET(req: NextRequest) {
   const billingMonth = searchParams.get("billingMonth");
   const billingYear = searchParams.get("billingYear");
   const lastReading = searchParams.get("lastReading");
-  const page = parseInt(searchParams.get("page") ?? "1");
-  const limit = parseInt(searchParams.get("limit") ?? "20");
+  const page = Math.max(1, parseInt(searchParams.get("page") ?? "1") || 1);
+  const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") ?? "20") || 20));
   const skip = (page - 1) * limit;
 
-  // Handle auto-populating previous meter reading
+  // Handle auto-populating previous meter reading - fast indexed path
   if (lastReading === "true" && (customerId || unitId)) {
     const filter: Record<string, unknown> = { status: { $ne: "cancelled" } };
     if (customerId) filter.customerId = customerId;
     if (unitId) filter.unitId = unitId;
 
     const latestBill = await Bill.findOne(filter)
+      .select("invoiceNumber invoiceDate items")
       .sort({ invoiceDate: -1, createdAt: -1 })
       .lean();
 
@@ -106,7 +107,10 @@ export async function GET(req: NextRequest) {
   }
 
   const query: Record<string, unknown> = {};
-  if (search) query.invoiceNumber = new RegExp(search, "i");
+  if (search) {
+    const esc = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    query.invoiceNumber = { $regex: esc, $options: "i" };
+  }
   if (customerId) query.customerId = customerId;
   if (unitId) query.unitId = unitId;
   if (status) query.status = { $in: status.split(",") };
@@ -115,20 +119,27 @@ export async function GET(req: NextRequest) {
   if (billingYear) query.billingYear = parseInt(billingYear);
 
   if (clientSearch) {
+    const esc = clientSearch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const matchingCustomers = await Customer.find({
       $or: [
-        { name: new RegExp(clientSearch, "i") },
-        { customerId: new RegExp(clientSearch, "i") },
-        { mobile: new RegExp(clientSearch, "i") },
+        { name: { $regex: esc, $options: "i" } },
+        { customerId: { $regex: esc, $options: "i" } },
+        { mobile: { $regex: esc, $options: "i" } },
       ],
-    }).select("_id").lean();
+    }).select("_id").limit(50).lean();
 
     const customerIds = matchingCustomers.map((c) => c._id);
+    if (customerIds.length === 0) {
+      const res = NextResponse.json({ data: [], total: 0, page, limit });
+      res.headers.set("Cache-Control", "public, s-maxage=5, stale-while-revalidate=30");
+      return res;
+    }
     query.customerId = { $in: customerIds };
   }
 
   const [data, total] = await Promise.all([
     Bill.find(query)
+      .select("invoiceNumber customerId unitId locationId billingMonth billingYear grandTotal paidAmount outstandingAmount status invoiceDate dueDate createdAt")
       .populate("customerId", "name customerId mobile")
       .populate("unitId", "unitCode unitId")
       .populate("locationId", "name")
@@ -139,7 +150,9 @@ export async function GET(req: NextRequest) {
     Bill.countDocuments(query),
   ]);
 
-  return NextResponse.json({ data, total, page, limit });
+  const res = NextResponse.json({ data, total, page, limit });
+  res.headers.set("Cache-Control", "public, s-maxage=5, stale-while-revalidate=30");
+  return res;
 }
 
 export async function POST(req: NextRequest) {

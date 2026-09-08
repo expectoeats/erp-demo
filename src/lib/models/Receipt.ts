@@ -38,8 +38,11 @@ const ReceiptSchema = new Schema<IReceipt>(
 );
 
 ReceiptSchema.index({ customerId: 1, createdAt: -1 });
+ReceiptSchema.index({ customerId: 1, financialYearId: 1 });
 ReceiptSchema.index({ billId: 1 });
 ReceiptSchema.index({ receiptNumber: 1 });
+ReceiptSchema.index({ receiptDate: -1 });
+ReceiptSchema.index({ createdAt: -1 });
 
 const Receipt: Model<IReceipt> =
   mongoose.models.Receipt ||

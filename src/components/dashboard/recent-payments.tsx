@@ -20,14 +20,25 @@ export function RecentPayments() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const abort = new AbortController();
     let mounted = true;
-    fetch("/api/dashboard/recent-payments", { signal: abort.signal })
+    try {
+      const cached = sessionStorage.getItem("dashboard:recent-payments");
+      if (cached) {
+        const { data, ts } = JSON.parse(cached);
+        if (Date.now() - ts < 5000) { setPayments(data); setLoading(false); }
+      }
+    } catch {}
+    fetch("/api/dashboard/recent-payments", { cache: "no-store" } as RequestInit)
       .then((r) => (r.ok ? r.json() : { data: [] }))
-      .then((d) => { if (mounted) setPayments(d.data ?? []); })
-      .catch((e) => { if (e instanceof DOMException && e.name === "AbortError") return; })
+      .then((d) => {
+        if (mounted) {
+          setPayments(d.data ?? []);
+          try { sessionStorage.setItem("dashboard:recent-payments", JSON.stringify({ data: d.data ?? [], ts: Date.now() })); } catch {}
+        }
+      })
+      .catch(() => {})
       .finally(() => { if (mounted) setLoading(false); });
-    return () => { mounted = false; abort.abort(); };
+    return () => { mounted = false; };
   }, []);
 
   return (

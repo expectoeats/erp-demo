@@ -41,6 +41,14 @@ const PaymentSchema = new Schema<IPayment>(
   { timestamps: true }
 );
 
+PaymentSchema.index({ customerId: 1, createdAt: -1 });
+PaymentSchema.index({ billId: 1 });
+PaymentSchema.index({ unitId: 1 });
+PaymentSchema.index({ financialYearId: 1 });
+PaymentSchema.index({ paymentDate: -1 });
+PaymentSchema.index({ createdAt: -1 });
+PaymentSchema.index({ status: 1 });
+
 const Payment: Model<IPayment> =
   mongoose.models.Payment ||
   mongoose.model<IPayment>("Payment", PaymentSchema);
