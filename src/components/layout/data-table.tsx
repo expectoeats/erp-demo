@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -31,6 +31,8 @@ interface DataTableProps<T> {
   emptyMessage?: React.ReactNode;
   actions?: React.ReactNode;
   keyField?: string;
+  /** If true, never show empty message on first mount (assume loading is imminent). */
+  noInitialEmpty?: boolean;
 }
 
 export function DataTable<T extends Record<string, unknown>>({
@@ -47,8 +49,23 @@ export function DataTable<T extends Record<string, unknown>>({
   emptyMessage = "No records found.",
   actions,
   keyField = "_id",
+  noInitialEmpty = true,
 }: DataTableProps<T>) {
   const totalPages = Math.ceil(totalCount / pageSize);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(data.length > 0);
+  const initialNonEmpty = data.length > 0;
+
+  // Safeguard: After any effect runs, if the parent says !loading + had a chance to update, stop forcing skeletons.
+  // This setState is intentionally a one-way latch (only flips true once) to prevent cascading re-renders.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!hasLoadedOnce && (data.length > 0 || !loading)) setHasLoadedOnce(true);
+  }, [loading, data, hasLoadedOnce]);
+
+  // KEY FIX: If noInitialEmpty=true AND we're still in first mount cycle AND no data ever received → force skeletons
+  // This acts as a "warmup" safety net if parent component's loading state initialization hasn't caught up yet.
+  const forceSkeletons = noInitialEmpty && !hasLoadedOnce && !initialNonEmpty;
+  const isEffectiveLoading = loading || forceSkeletons;
 
   return (
     <div className="flex flex-col gap-3">
@@ -83,7 +100,7 @@ export function DataTable<T extends Record<string, unknown>>({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading && data.length === 0 ? (
+            {isEffectiveLoading && data.length === 0 ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i} className="animate-in fade-in slide-in-from-bottom-1" style={{ animationDelay: `${i * 50}ms` }}>
                   {columns.map((col, colIdx) => {
@@ -138,7 +155,7 @@ export function DataTable<T extends Record<string, unknown>>({
                     ))}
                   </TableRow>
                 ))}
-                {loading && (
+                {loading && !forceSkeletons && (
                   <TableRow>
                     <TableCell colSpan={columns.length} className="text-center py-2">
                       <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
@@ -155,7 +172,7 @@ export function DataTable<T extends Record<string, unknown>>({
       </div>
 
       {/* Pagination */}
-      {totalPages > 1 && (
+      {!forceSkeletons && totalPages > 1 && (
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>
             {Math.min((page - 1) * pageSize + 1, totalCount)}–{Math.min(page * pageSize, totalCount)} of {totalCount}

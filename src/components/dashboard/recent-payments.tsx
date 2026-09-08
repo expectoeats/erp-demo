@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import Link from "next/link";
 
 interface RecentPayment {
@@ -16,18 +16,29 @@ interface RecentPayment {
 }
 
 export function RecentPayments() {
-  const [payments, setPayments] = useState<RecentPayment[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let mounted = true;
+  const [payments, setPayments] = useState<RecentPayment[]>(() => {
     try {
       const cached = sessionStorage.getItem("dashboard:recent-payments");
       if (cached) {
         const { data, ts } = JSON.parse(cached);
-        if (Date.now() - ts < 5000) { setPayments(data); setLoading(false); }
+        if (Date.now() - ts < 30000 && Array.isArray(data) && data.length > 0) return data as RecentPayment[];
       }
     } catch {}
+    return [];
+  });
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = sessionStorage.getItem("dashboard:recent-payments");
+      if (cached) {
+        const { data, ts } = JSON.parse(cached);
+        if (Date.now() - ts < 30000 && Array.isArray(data) && data.length > 0) return false;
+      }
+    } catch {}
+    return true;
+  });
+
+  useEffect(() => {
+    let mounted = true;
     fetch("/api/dashboard/recent-payments", { cache: "no-store" } as RequestInit)
       .then((r) => (r.ok ? r.json() : { data: [] }))
       .then((d) => {
@@ -51,7 +62,13 @@ export function RecentPayments() {
         {loading ? (
           <div className="p-4 flex flex-col gap-3">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="h-10 bg-muted animate-pulse rounded" />
+              <div
+                key={i}
+                className="h-10 bg-muted rounded relative overflow-hidden"
+                style={{ animationDelay: `${i * 80}ms` }}
+              >
+                <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.8s_infinite] bg-gradient-to-r from-transparent via-white/70 to-transparent" />
+              </div>
             ))}
           </div>
         ) : payments.length === 0 ? (

@@ -31,7 +31,6 @@ import {
   FileText,
   Calendar,
   Receipt,
-  CheckCircle2,
   Clock,
   Zap,
   Gauge,
@@ -237,7 +236,8 @@ export default function CustomersPage({ initialData, initialTotal }: ClientsClie
   const [data, setData] = useState<Customer[]>(() => {
     if (initialData && initialData.length > 0) return initialData;
     const cached = getInstantCache<{ data: Customer[]; total: number }>("cache:clients:list");
-    return (cached?.data as Customer[]) ?? [];
+    if (cached?.data && cached.data.length > 0) return cached.data as Customer[];
+    return [];
   });
   const [total, setTotal] = useState(() => {
     if (typeof initialTotal === "number" && initialTotal > 0) return initialTotal;
@@ -246,8 +246,14 @@ export default function CustomersPage({ initialData, initialTotal }: ClientsClie
   });
   const [loading, setLoading] = useState(() => {
     if (initialData && initialData.length > 0) return false;
-    const cached = getInstantCache("cache:clients:list");
-    return !cached;
+    const cached = getInstantCache<{ data: Customer[] }>("cache:clients:list");
+    if (cached?.data && cached.data.length > 0) return false;
+    return true;
+  });
+  const [, setHasLoadedOnce] = useState(() => {
+    if (initialData && initialData.length > 0) return true;
+    const cached = getInstantCache<{ data: Customer[] }>("cache:clients:list");
+    return cached?.data && cached.data.length > 0;
   });
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
@@ -265,7 +271,7 @@ export default function CustomersPage({ initialData, initialTotal }: ClientsClie
   const [orgs, setOrgs] = useState<OrgOption[]>([]);
 
   // Ledger & bulk-generate state
-  const [financialYears, setFinancialYears] = useState<{ _id: string; name: string; isActive: boolean; startDate: string; endDate: string }[]>([]);
+  const [, setFinancialYears] = useState<{ _id: string; name: string; isActive: boolean; startDate: string; endDate: string }[]>([]);
   const [bulkGenerating, setBulkGenerating] = useState<string | null>(null);
 
   // Active FY bounds for billingStartDate validation
@@ -284,6 +290,7 @@ export default function CustomersPage({ initialData, initialTotal }: ClientsClie
       const nextTotal = d.total ?? 0;
       setData(nextData);
       setTotal(nextTotal);
+      setHasLoadedOnce(true);
       if (!debouncedSearch && page === 1) setInstantCache("cache:clients:list", { data: nextData, total: nextTotal });
     } catch {
       // single fast retry for cold-start, no abort needed
@@ -296,11 +303,13 @@ export default function CustomersPage({ initialData, initialTotal }: ClientsClie
           const nt = d2.total ?? 0;
           setData(nd);
           setTotal(nt);
+          setHasLoadedOnce(true);
           if (!debouncedSearch && page === 1) setInstantCache("cache:clients:list", { data: nd, total: nt });
         }
       } catch {}
     } finally {
       setLoading(false);
+      setHasLoadedOnce(true);
     }
   }, [debouncedSearch, page]);
 
@@ -324,12 +333,12 @@ export default function CustomersPage({ initialData, initialTotal }: ClientsClie
     // instant cache for dropdowns — 30s
     const cachedLoc = getInstantCache<{ data: LocationOption[] }>("cache:locations");
     const cachedOrg = getInstantCache<{ data: OrgOption[] }>("cache:orgs");
-    const cachedFy = getInstantCache<{ data: typeof financialYears }>("cache:fys");
+    const cachedFy = getInstantCache<{ data: { _id: string; name: string; isActive: boolean; startDate: string; endDate: string }[] }>("cache:fys");
     if (cachedLoc?.data) setLocations(cachedLoc.data as LocationOption[]);
     if (cachedOrg?.data) setOrgs(cachedOrg.data as OrgOption[]);
     if (cachedFy?.data) {
-      setFinancialYears(cachedFy.data as typeof financialYears);
-      const active = (cachedFy.data as typeof financialYears).find((f) => f.isActive);
+      setFinancialYears(cachedFy.data);
+      const active = cachedFy.data.find((f) => f.isActive);
       if (active) setActiveFY({ startDate: active.startDate, endDate: active.endDate, name: active.name });
     }
     async function loadDropdowns() {

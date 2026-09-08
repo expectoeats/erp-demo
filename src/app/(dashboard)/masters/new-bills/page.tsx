@@ -32,10 +32,8 @@ import {
   Pencil,
   Plus,
   Trash2,
-  Gauge,
   Zap,
   Calculator,
-  Calendar,
   Layers,
   Sparkles,
   Lock,
@@ -214,9 +212,20 @@ function calculateTotalServiceAmount(services: CustomerService[] = []): {
 
 export default function BillsPage() {
   const router = useRouter();
-  const [data, setData] = useState<Bill[]>(() => (getInstantCache<{ data: Bill[] }>("cache:new-bills")?.data as Bill[]) ?? []);
+  const [data, setData] = useState<Bill[]>(() => {
+    const cached = getInstantCache<{ data: Bill[] }>("cache:new-bills");
+    if (cached?.data && cached.data.length > 0) return cached.data as Bill[];
+    return [];
+  });
   const [total, setTotal] = useState(() => getInstantCache<{ total: number }>("cache:new-bills")?.total ?? 0);
-  const [loading, setLoading] = useState(() => !getInstantCache("cache:new-bills"));
+  const [loading, setLoading] = useState(() => {
+    const cached = getInstantCache<{ data: Bill[] }>("cache:new-bills");
+    return !(cached?.data && cached.data.length > 0);
+  });
+  const [, setHasLoadedOnce] = useState(() => {
+    const cached = getInstantCache<{ data: Bill[] }>("cache:new-bills");
+    return !!(cached?.data && cached.data.length > 0);
+  });
   const [page, setPage] = useState(1);
   const [invoiceSearch, setInvoiceSearch] = useState("");
   const [clientSearch, setClientSearch] = useState("");
@@ -291,6 +300,7 @@ export default function BillsPage() {
       const nt = d.total ?? 0;
       setData(nd);
       setTotal(nt);
+      setHasLoadedOnce(true);
       if (!debouncedInvoiceSearch && !debouncedClientSearch && page === 1 && effectiveStatus === "unpaid,overdue") {
         setInstantCache("cache:new-bills", { data: nd, total: nt });
       }
@@ -302,7 +312,7 @@ export default function BillsPage() {
           const d2 = await r2.json();
           const nd2 = d2.data ?? [];
           const nt2 = d2.total ?? 0;
-          setData(nd2); setTotal(nt2);
+          setData(nd2); setTotal(nt2); setHasLoadedOnce(true);
           if (!debouncedInvoiceSearch && !debouncedClientSearch && page === 1 && effectiveStatus === "unpaid,overdue") {
             setInstantCache("cache:new-bills", { data: nd2, total: nt2 });
           }
@@ -310,6 +320,7 @@ export default function BillsPage() {
       } catch {}
     } finally {
       setLoading(false);
+      setHasLoadedOnce(true);
     }
   }, [debouncedInvoiceSearch, debouncedClientSearch, page, effectiveStatus]);
 

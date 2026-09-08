@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 import {
   Dialog,
   DialogContent,
@@ -25,12 +25,8 @@ import {
   Plus,
   CheckCircle2,
   CreditCard,
-  Building2,
-  Calendar,
-  Search,
   FileText,
   Printer,
-  User,
   ArrowRight,
 } from "lucide-react";
 import Link from "next/link";
@@ -82,15 +78,27 @@ function ReceiptsPageContent() {
   const searchParams = useSearchParams();
   const preselectedBillId = searchParams.get("billId");
 
-  const [data, setData] = useState<Receipt[]>(() => (getInstantCache<{ data: Receipt[] }>("cache:receipts:list")?.data as Receipt[]) ?? []);
+  const [data, setData] = useState<Receipt[]>(() => {
+    const cached = getInstantCache<{ data: Receipt[] }>("cache:receipts:list");
+    if (cached?.data && cached.data.length > 0) return cached.data as Receipt[];
+    return [];
+  });
   const [total, setTotal] = useState(() => getInstantCache<{ total: number }>("cache:receipts:list")?.total ?? 0);
-  const [loading, setLoading] = useState(() => !getInstantCache("cache:receipts:list"));
+  const [loading, setLoading] = useState(() => {
+    const cached = getInstantCache<{ data: Receipt[] }>("cache:receipts:list");
+    return !(cached?.data && cached.data.length > 0);
+  });
+  const [, setHasLoadedOnce] = useState(() => {
+    const cached = getInstantCache<{ data: Receipt[] }>("cache:receipts:list");
+    return !!(cached?.data && cached.data.length > 0);
+  });
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 150);
 
   // Unpaid bills for recording payments
   const [unpaidBills, setUnpaidBills] = useState<BillRef[]>([]);
+  const [unpaidBillsLoading, setUnpaidBillsLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -121,21 +129,26 @@ function ReceiptsPageContent() {
       const nt = d.total ?? 0;
       setData(nd);
       setTotal(nt);
+      setHasLoadedOnce(true);
       if (!debouncedSearch && page === 1) setInstantCache("cache:receipts:list", { data: nd, total: nt });
     } catch {
       // keep previous data — no empty flash
     } finally {
       setLoading(false);
+      setHasLoadedOnce(true);
     }
   }, [page, debouncedSearch]);
 
   const loadUnpaidBills = useCallback(async () => {
+    setUnpaidBillsLoading(true);
     try {
       const r = await fetch("/api/bills?status=unpaid,overdue,partially_paid&limit=100");
       const d = await r.json();
       setUnpaidBills(d.data ?? []);
     } catch {
       // ignore
+    } finally {
+      setUnpaidBillsLoading(false);
     }
   }, []);
 
@@ -363,7 +376,13 @@ function ReceiptsPageContent() {
               <ReceiptIcon className="h-4 w-4" />
             </div>
           </div>
-          <div className="text-2xl font-extrabold text-slate-900 mt-2">{total}</div>
+          <div className="text-2xl font-extrabold text-slate-900 mt-2 tabular-nums">
+            {loading ? (
+              <span className="inline-block w-14 h-7 rounded bg-emerald-200/60 animate-pulse" />
+            ) : (
+              total
+            )}
+          </div>
         </div>
 
         <div className="p-4 rounded-xl border border-blue-200 bg-linear-to-br from-blue-50 to-indigo-50 shadow-2xs">
@@ -375,8 +394,12 @@ function ReceiptsPageContent() {
               <CreditCard className="h-4 w-4" />
             </div>
           </div>
-          <div className="text-2xl font-extrabold text-slate-900 mt-2 font-mono">
-            {formatCurrency(totalCollected)}
+          <div className="text-2xl font-extrabold text-slate-900 mt-2 font-mono tabular-nums">
+            {loading ? (
+              <span className="inline-block w-28 h-7 rounded bg-blue-200/60 animate-pulse" />
+            ) : (
+              formatCurrency(totalCollected)
+            )}
           </div>
         </div>
 
@@ -389,8 +412,12 @@ function ReceiptsPageContent() {
               <FileText className="h-4 w-4" />
             </div>
           </div>
-          <div className="text-2xl font-extrabold text-slate-900 mt-2">
-            {unpaidBills.length}
+          <div className="text-2xl font-extrabold text-slate-900 mt-2 tabular-nums">
+            {unpaidBillsLoading ? (
+              <span className="inline-block w-14 h-7 rounded bg-amber-200/60 animate-pulse" />
+            ) : (
+              unpaidBills.length
+            )}
           </div>
         </div>
       </div>

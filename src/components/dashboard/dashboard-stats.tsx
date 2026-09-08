@@ -47,22 +47,29 @@ function StatCard({ label, value, icon: Icon, color, sub }: StatCardProps) {
 }
 
 export function DashboardStats() {
-  const [stats, setStats] = useState<StatsData | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let mounted = true;
-    // instant cache hit from sessionStorage if available
+  const [stats, setStats] = useState<StatsData | null>(() => {
     try {
       const cached = sessionStorage.getItem("dashboard:stats");
       if (cached) {
         const { data, ts } = JSON.parse(cached);
-        if (Date.now() - ts < 5000) {
-          setStats(data);
-          setLoading(false);
-        }
+        if (Date.now() - ts < 30000 && data) return data as StatsData;
       }
     } catch {}
+    return null;
+  });
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = sessionStorage.getItem("dashboard:stats");
+      if (cached) {
+        const { data, ts } = JSON.parse(cached);
+        if (Date.now() - ts < 30000 && data) return false;
+      }
+    } catch {}
+    return true;
+  });
+
+  useEffect(() => {
+    let mounted = true;
     fetch("/api/dashboard/stats", { cache: "no-store" } as RequestInit)
       .then((r) => (r.ok ? r.json() : { data: null }))
       .then((d) => {
@@ -82,8 +89,18 @@ export function DashboardStats() {
         {Array.from({ length: 9 }).map((_, i) => (
           <Card key={i} className="border shadow-sm">
             <CardContent className="p-4">
-              <div className="h-4 bg-muted animate-pulse rounded w-3/4 mb-2" />
-              <div className="h-7 bg-muted animate-pulse rounded w-1/2" />
+              <div
+                className="h-4 bg-muted rounded w-3/4 mb-2 relative overflow-hidden"
+                style={{ animationDelay: `${i * 40}ms` }}
+              >
+                <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.8s_infinite] bg-gradient-to-r from-transparent via-white/70 to-transparent" />
+              </div>
+              <div
+                className="h-7 bg-muted rounded w-1/2 relative overflow-hidden"
+                style={{ animationDelay: `${i * 40 + 80}ms` }}
+              >
+                <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.8s_infinite] bg-gradient-to-r from-transparent via-white/70 to-transparent" />
+              </div>
             </CardContent>
           </Card>
         ))}

@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import Link from "next/link";
 
 interface RecentBill {
@@ -25,18 +25,29 @@ const statusVariants: Record<string, "default" | "success" | "warning" | "destru
 };
 
 export function RecentBills() {
-  const [bills, setBills] = useState<RecentBill[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let mounted = true;
+  const [bills, setBills] = useState<RecentBill[]>(() => {
     try {
       const cached = sessionStorage.getItem("dashboard:recent-bills");
       if (cached) {
         const { data, ts } = JSON.parse(cached);
-        if (Date.now() - ts < 5000) { setBills(data); setLoading(false); }
+        if (Date.now() - ts < 30000 && Array.isArray(data) && data.length > 0) return data as RecentBill[];
       }
     } catch {}
+    return [];
+  });
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = sessionStorage.getItem("dashboard:recent-bills");
+      if (cached) {
+        const { data, ts } = JSON.parse(cached);
+        if (Date.now() - ts < 30000 && Array.isArray(data) && data.length > 0) return false;
+      }
+    } catch {}
+    return true;
+  });
+
+  useEffect(() => {
+    let mounted = true;
     fetch("/api/dashboard/recent-bills", { cache: "no-store" } as RequestInit)
       .then((r) => (r.ok ? r.json() : { data: [] }))
       .then((d) => {
@@ -60,7 +71,13 @@ export function RecentBills() {
         {loading ? (
           <div className="p-4 flex flex-col gap-3">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="h-10 bg-muted animate-pulse rounded" />
+              <div
+                key={i}
+                className="h-10 bg-muted rounded relative overflow-hidden"
+                style={{ animationDelay: `${i * 80}ms` }}
+              >
+                <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.8s_infinite] bg-gradient-to-r from-transparent via-white/70 to-transparent" />
+              </div>
             ))}
           </div>
         ) : bills.length === 0 ? (
