@@ -541,7 +541,7 @@ export default function BillListPage() {
         const canDelete = bill.status !== "paid" && bill.status !== "partially_paid";
         return (
           <div className="flex items-center justify-end gap-1">
-            <Link href={`/transactions/bills/${bill._id}`}
+            <Link href={`/transactions/bills/${bill._id}?from=bill-list`}
               className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-muted transition-colors" title="View Invoice">
               <Eye className="h-3.5 w-3.5 text-muted-foreground" />
             </Link>

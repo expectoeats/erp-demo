@@ -734,7 +734,7 @@ export default function BillsPage() {
           <div className="flex items-center justify-end gap-1">
             {/* View invoice icon */}
             <Button variant="ghost" size="icon-sm" asChild title="View Invoice">
-              <Link href={`/transactions/bills/${row._id}`}>
+              <Link href={`/transactions/bills/${row._id}?from=new-bills`}>
                 <Eye className="h-3.5 w-3.5 text-slate-600" />
               </Link>
             </Button>

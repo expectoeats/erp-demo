@@ -11,11 +11,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { id } = await params;
   const body = await req.json();
 
-  if (body.isActive) {
+  if (body.isActive === true) {
+    // Deactivate all others before setting this one active
     await FinancialYear.updateMany({}, { isActive: false });
   }
 
-  const updated = await FinancialYear.findByIdAndUpdate(id, body, { new: true });
+  // Explicitly pick allowed fields to prevent unintended overwrites
+  const update: Record<string, unknown> = {};
+  if (body.name      !== undefined) update.name      = body.name;
+  if (body.startDate !== undefined) update.startDate = body.startDate;
+  if (body.endDate   !== undefined) update.endDate   = body.endDate;
+  if (body.isActive  !== undefined) update.isActive  = body.isActive;
+  if (body.isClosed  !== undefined) update.isClosed  = body.isClosed;
+
+  const updated = await FinancialYear.findByIdAndUpdate(id, { $set: update }, { new: true });
   if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ data: updated });
 }

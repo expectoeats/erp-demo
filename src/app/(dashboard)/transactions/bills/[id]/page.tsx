@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useEffect, useState, use, useMemo } from "react";
+import React, { useEffect, useState, use, useMemo, Suspense } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -118,8 +118,29 @@ export default function BillDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  return (
+    <Suspense fallback={null}>
+      <BillDetailInner params={params} />
+    </Suspense>
+  );
+}
+
+function BillDetailInner({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = use(params);
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Determine back URL from query param so this page works from multiple entry points
+  const fromParam = searchParams.get("from");
+  const backUrl =
+    fromParam === "new-bills"  ? "/masters/new-bills"  :
+    fromParam === "bill-list"  ? "/masters/bill-list"  :
+    fromParam === "clients"    ? "/masters/clients"    :
+    "/masters/new-bills"; // default: new-bills (transactions/bills no longer exists)
   const [bill, setBill] = useState<BillData | null>(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
@@ -297,7 +318,7 @@ export default function BillDetailPage({
         <h2 className="text-lg font-bold text-slate-800">Invoice Not Found</h2>
         <p className="text-xs text-slate-500 mt-1">The requested bill does not exist.</p>
         <Button asChild className="mt-4" size="sm">
-          <Link href="/transactions/bills">Back to Invoices</Link>
+          <Link href={backUrl}>Back to Invoices</Link>
         </Button>
       </div>
     );
@@ -308,7 +329,7 @@ export default function BillDetailPage({
       {/* Top Action Bar (hidden in print) */}
       <div className="flex items-center justify-between no-print gap-3">
         <Button variant="outline" size="sm" asChild>
-          <Link href="/transactions/bills">
+          <Link href={backUrl}>
             <ArrowLeft className="h-4 w-4 mr-1.5" /> Back to Invoices
           </Link>
         </Button>
