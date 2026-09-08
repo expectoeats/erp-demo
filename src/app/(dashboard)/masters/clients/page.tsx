@@ -37,6 +37,10 @@ import {
   Gauge,
   Calculator,
   Building2,
+  RefreshCw,
+  Loader2,
+  AlertCircle,
+  FilePlus2,
 } from "lucide-react";
 import { useDebounce } from "@/hooks/use-debounce";
 import { generateClientReportPDF } from "@/lib/utils/client-report";
@@ -194,6 +198,36 @@ function calculateTotalServiceAmount(services: CustomerService[] = []): {
   return { subtotal, totalGst, grandTotal, gstBreakdown };
 }
 
+/**
+ * Client-side mirror of the server's validateBillingStartDate().
+ * fyStartIso — ISO string of the active FY startDate (from API).
+ * Returns an error string or empty string if valid.
+ */
+function validateBillingStartDateFE(dateStr: string, fyStartIso: string): string {
+  const date     = new Date(dateStr);
+  const fyStart  = new Date(fyStartIso);
+  const today    = new Date();
+  today.setHours(23, 59, 59, 999);
+  fyStart.setHours(0, 0, 0, 0);
+
+  if (isNaN(date.getTime())) return "Invalid billing start date.";
+
+  if (date < fyStart) {
+    return (
+      `Billing start date must be within the active Financial Year ` +
+      `(${fyStart.toLocaleDateString("en-IN")} – Today). ` +
+      `Dates before ${fyStart.toLocaleDateString("en-IN")} belong to a closed financial year.`
+    );
+  }
+  if (date > today) {
+    return (
+      `Billing start date cannot be a future date. ` +
+      `Please select a date between ${fyStart.toLocaleDateString("en-IN")} and today.`
+    );
+  }
+  return "";
+}
+
 export default function CustomersPage() {
   const [data, setData] = useState<Customer[]>([]);
   const [total, setTotal] = useState(0);
@@ -212,6 +246,14 @@ export default function CustomersPage() {
   const [form, setForm] = useState(emptyForm);
   const [locations, setLocations] = useState<LocationOption[]>([]);
   const [orgs, setOrgs] = useState<OrgOption[]>([]);
+
+  // Ledger & bulk-generate state
+  const [financialYears, setFinancialYears] = useState<{ _id: string; name: string; isActive: boolean; startDate: string; endDate: string }[]>([]);
+  const [bulkGenerating, setBulkGenerating] = useState<string | null>(null);
+
+  // Active FY bounds for billingStartDate validation
+  const [activeFY, setActiveFY] = useState<{ startDate: string; endDate: string; name: string } | null>(null);
+  const [startDateError, setStartDateError] = useState<string>("");
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -262,9 +304,10 @@ export default function CustomersPage() {
     let mounted = true;
     async function loadDropdowns() {
       try {
-        const [locRes, orgRes] = await Promise.all([
+        const [locRes, orgRes, fyRes] = await Promise.all([
           fetch("/api/locations?limit=100", { signal: ac.signal }),
           fetch("/api/settings/organisation", { signal: ac.signal }),
+          fetch("/api/financial-years", { signal: ac.signal }),
         ]);
         if (!mounted) return;
         if (locRes.ok) {
@@ -274,6 +317,14 @@ export default function CustomersPage() {
         if (orgRes.ok) {
           const orgJson = await orgRes.json();
           if (orgJson.data) setOrgs(orgJson.data);
+        }
+        if (fyRes.ok) {
+          const fyJson = await fyRes.json();
+          if (fyJson.data) {
+            setFinancialYears(fyJson.data);
+            const active = fyJson.data.find((f: { isActive: boolean }) => f.isActive);
+            if (active) setActiveFY({ startDate: active.startDate, endDate: active.endDate, name: active.name });
+          }
         }
       } catch (e: unknown) {
         if (e instanceof DOMException && e.name === "AbortError") return;
@@ -285,22 +336,30 @@ export default function CustomersPage() {
 
   function openAdd() {
     setEditing(null);
+    setStartDateError("");
     const defaultOrg = orgs.find((o) => o.isDefault) || orgs[0];
     const defaultLocId =
       typeof defaultOrg?.locationId === "object" && defaultOrg?.locationId !== null
         ? (defaultOrg.locationId as LocationRef)._id
         : (defaultOrg?.locationId as string) || "";
 
+    // Default billingStartDate = FY start (1 Apr) if active FY available, else today
+    const defaultStartDate = activeFY
+      ? new Date(activeFY.startDate).toISOString().split("T")[0]
+      : new Date().toISOString().split("T")[0];
+
     setForm({
       ...emptyForm,
       orgId: defaultOrg?._id || "",
       billingLocationId: defaultLocId || "",
+      billingStartDate: defaultStartDate,
     });
     setOpen(true);
   }
 
   function openEdit(c: Customer) {
     setEditing(c);
+    setStartDateError("");
     const orgId =
       typeof c.orgId === "object" && c.orgId !== null
         ? (c.orgId as OrgRef)._id
@@ -367,6 +426,55 @@ export default function CustomersPage() {
       orgId: selectedOrgId,
       billingLocationId: mappedLocId || f.billingLocationId,
     }));
+  }
+
+  // ── Bulk Generate Past Bills ──────────────────────────────────────────────
+  async function handleBulkGenerate(customer: Customer) {
+    setBulkGenerating(customer._id);
+    try {
+      // Dry run first to show what will be created
+      const dryRes = await fetch("/api/bills/bulk-generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customerId: customer._id, dryRun: true }),
+      });
+      const dryJson = await dryRes.json();
+      if (!dryRes.ok) {
+        toast.error(dryJson.error ?? "Cannot bulk generate bills");
+        return;
+      }
+      if (dryJson.totalPending === 0) {
+        toast.info("All bills are up to date. No pending months found.");
+        return;
+      }
+
+      const monthsList = (dryJson.wouldCreate as Array<{ month: string; year: number }>)
+        .map((m) => `${m.month} ${m.year}`)
+        .join(", ");
+      const confirmed = window.confirm(
+        `This will generate ${dryJson.totalPending} bill(s) for:\n${monthsList}\n\nElectricity bills will have 0 units — you can edit them to add meter readings.\n\nProceed?`
+      );
+      if (!confirmed) return;
+
+      const res = await fetch("/api/bills/bulk-generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customerId: customer._id, dryRun: false }),
+      });
+      const json = await res.json();
+      if (!res.ok && json.errors?.length > 0) {
+        toast.error(`Some bills failed: ${json.errors[0].error}`);
+        return;
+      }
+      toast.success(
+        `${json.created?.length ?? 0} bill(s) generated successfully!${json.skipped?.length ? ` (${json.skipped.length} already existed)` : ""}`
+      );
+      load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to generate bills");
+    } finally {
+      setBulkGenerating(null);
+    }
   }
 
   async function handleView(c: Customer) {
@@ -437,6 +545,17 @@ export default function CustomersPage() {
       return;
     }
 
+    // FY date validation (mirrors server-side logic for instant feedback)
+    if (form.billingStartDate && activeFY) {
+      const err = validateBillingStartDateFE(form.billingStartDate, activeFY.startDate);
+      if (err) {
+        setStartDateError(err);
+        toast.error(err);
+        return;
+      }
+    }
+    setStartDateError("");
+
     setSaving(true);
     try {
       const services = form.services.map((s) => {
@@ -467,9 +586,25 @@ export default function CustomersPage() {
         toast.error(d.error || "Failed to save client");
         return;
       }
-      toast.success(
-        editing ? "Client updated successfully" : "Client added successfully. First bill generated — check New Bills tab."
-      );
+
+      if (editing) {
+        toast.success("Client updated successfully");
+      } else {
+        // Show summary of auto-generated bills
+        const generated: { month: string; year: number; invoiceNumber: string }[] = d.billsGenerated ?? [];
+        if (generated.length > 0) {
+          toast.success(
+            `Client added! ${generated.length} bill${generated.length > 1 ? "s" : ""} auto-generated: ` +
+            generated.map((b) => `${b.month} ${b.year}`).join(", "),
+            { duration: 6000 }
+          );
+        } else {
+          toast.success(
+            d.message ?? "Client added successfully. Bills will be generated once services are configured.",
+            { duration: 4000 }
+          );
+        }
+      }
 
       setOpen(false);
       load();
@@ -635,20 +770,11 @@ export default function CustomersPage() {
     {
       key: "_id",
       label: "Actions",
-      className: "w-28 text-right",
+      className: "w-32 text-right",
       render: (_, row) => {
         const item = row as unknown as Customer;
         return (
           <div className="flex items-center justify-end gap-1">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              title="Generate Report (PDF)"
-              className="text-slate-600 hover:text-primary hover:bg-slate-100"
-              onClick={() => handleGenerateCustomerReport(item)}
-            >
-              <FileText className="h-4 w-4" />
-            </Button>
             <Button
               variant="ghost"
               size="icon-sm"
@@ -901,39 +1027,91 @@ export default function CustomersPage() {
                     <div>
                       <Label className="text-xs font-semibold text-slate-700">
                         Billing Start Date
+                        {activeFY && (
+                          <span className="ml-1.5 text-[10px] font-normal text-slate-400">
+                            (Active FY: {activeFY.name} · from {new Date(activeFY.startDate).toLocaleDateString("en-IN")})
+                          </span>
+                        )}
                       </Label>
                       <Input
                         type="date"
-                        className="mt-1.5 bg-white text-sm h-10"
+                        className={`mt-1.5 bg-white text-sm h-10 ${startDateError ? "border-red-400 focus:ring-red-400" : ""}`}
                         value={form.billingStartDate}
-                        onChange={(e) =>
-                          setForm((f) => ({ ...f, billingStartDate: e.target.value }))
-                        }
+                        min={activeFY ? new Date(activeFY.startDate).toISOString().split("T")[0] : undefined}
+                        max={new Date().toISOString().split("T")[0]}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setForm((f) => ({ ...f, billingStartDate: val }));
+                          if (activeFY && val) {
+                            setStartDateError(validateBillingStartDateFE(val, activeFY.startDate));
+                          } else {
+                            setStartDateError("");
+                          }
+                        }}
                       />
+                      {/* Error message */}
+                      {startDateError && (
+                        <div className="mt-1.5 flex items-start gap-1.5 rounded-md bg-red-50 border border-red-200 px-2.5 py-2">
+                          <AlertCircle className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" />
+                          <p className="text-[11px] text-red-700 leading-relaxed">{startDateError}</p>
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  {form.billingStartDate && (
-                    <div className="mt-3 flex items-center gap-2 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-xs w-fit">
-                      <Calendar className="h-3.5 w-3.5 text-blue-600" />
-                      <span className="text-slate-500">Next Bill Generation:</span>
-                      <span className="font-semibold text-blue-900">
-                        {(() => {
-                          const d = new Date(form.billingStartDate);
-                          if (form.billingType === "quarterly")
-                            d.setMonth(d.getMonth() + 3);
-                          else if (form.billingType === "yearly")
-                            d.setFullYear(d.getFullYear() + 1);
-                          else d.setMonth(d.getMonth() + 1);
-                          return d.toLocaleDateString("en-IN", {
-                            day: "2-digit",
-                            month: "short",
-                            year: "numeric",
-                          });
-                        })()}
-                      </span>
-                    </div>
-                  )}
+                  {/* Auto-bills preview banner — only shown when date is valid and in the past */}
+                  {form.billingStartDate && !startDateError && !editing && (() => {
+                    const start   = new Date(form.billingStartDate);
+                    const today   = new Date();
+                    today.setDate(1); today.setHours(0,0,0,0);
+                    start.setDate(1); start.setHours(0,0,0,0);
+                    const months: string[] = [];
+                    const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+                    const cursor = new Date(start);
+                    while (cursor < today) {
+                      months.push(`${MONTH_NAMES[cursor.getMonth()]} ${cursor.getFullYear()}`);
+                      cursor.setMonth(cursor.getMonth() + 1);
+                    }
+                    if (months.length === 0) return null;
+                    return (
+                      <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 px-3.5 py-3 space-y-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <FilePlus2 className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+                          <span className="text-xs font-bold text-indigo-800">
+                            {months.length} bill{months.length > 1 ? "s" : ""} will be auto-generated on save
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-indigo-700 leading-relaxed">
+                          {months.join(" · ")}
+                        </p>
+                        <p className="text-[10px] text-indigo-500">
+                          Electricity bills will have 0 units — edit them to add actual meter readings.
+                        </p>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Next bill date badge — shown when start date is today or future (no backlog) */}
+                  {form.billingStartDate && !startDateError && (() => {
+                    const start   = new Date(form.billingStartDate);
+                    const today   = new Date();
+                    today.setDate(1); today.setHours(0,0,0,0);
+                    start.setDate(1); start.setHours(0,0,0,0);
+                    if (start < today) return null; // already shown above
+                    const next = new Date(start);
+                    if (form.billingType === "quarterly") next.setMonth(next.getMonth() + 3);
+                    else if (form.billingType === "yearly") next.setFullYear(next.getFullYear() + 1);
+                    else next.setMonth(next.getMonth() + 1);
+                    return (
+                      <div className="mt-3 flex items-center gap-2 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-xs w-fit">
+                        <Calendar className="h-3.5 w-3.5 text-blue-600" />
+                        <span className="text-slate-500">Next Bill Generation:</span>
+                        <span className="font-semibold text-blue-900">
+                          {next.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -2030,6 +2208,21 @@ export default function CustomersPage() {
               Close
             </Button>
             <div className="flex items-center gap-2">
+              {viewCustomer && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-medium shadow-2xs"
+                  disabled={bulkGenerating === viewCustomer._id}
+                  onClick={() => handleBulkGenerate(viewCustomer)}
+                >
+                  {bulkGenerating === viewCustomer._id
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : <RefreshCw className="h-3.5 w-3.5" />}
+                  {" "}Generate Past Bills
+                </Button>
+              )}
               {viewCustomer && (
                 <Button
                   type="button"

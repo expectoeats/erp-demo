@@ -45,7 +45,7 @@ const navItems: NavItem[] = [
     label: "Masters",
     icon: Building,
     children: [
-      { label: "Clients", href: "/masters/customers", icon: Users },
+      { label: "Clients", href: "/masters/clients", icon: Users },
       { label: "Financial Years", href: "/masters/financial-years", icon: CalendarDays },
       { label: "New Bills", href: "/masters/new-bills", icon: FileText },
       { label: "Bill List", href: "/masters/bill-list", icon: ScrollText },

@@ -3,12 +3,12 @@ import { connectDB } from "@/lib/db/connection";
 import { requireAuth, requireRole, ADMIN_ROLES } from "@/lib/auth/helpers";
 import Customer from "@/lib/models/Customer";
 import OrgSettings from "@/lib/models/OrgSettings";
-import Location from "@/lib/models/Location";
-import SubLocation from "@/lib/models/SubLocation";
-import Bill from "@/lib/models/Bill";
-import BillType from "@/lib/models/BillType";
-import FinancialYear from "@/lib/models/FinancialYear";
 import { getNextSequence } from "@/lib/services/counter.service";
+import {
+  generatePastBills,
+  getActiveFYBounds,
+  validateBillingStartDate,
+} from "@/lib/services/bill-generation.service";
 import { z } from "zod";
 
 const serviceItemSchema = z.object({
@@ -100,156 +100,92 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
   }
 
-  const seq = await getNextSequence("customer");
+  const d = parsed.data;
+  const billingType = d.billingType || "monthly";
+
+  // ── Active FY ──────────────────────────────────────────────────────────────
+  const fyBounds = await getActiveFYBounds();
+  if (!fyBounds) {
+    return NextResponse.json(
+      { error: "No active financial year found. Please set an active financial year before adding clients." },
+      { status: 422 },
+    );
+  }
+
+  // ── billingStartDate: parse & validate ─────────────────────────────────────
+  const startDate = d.billingStartDate ? new Date(d.billingStartDate) : new Date();
+
+  if (d.billingStartDate) {
+    const dateErr = validateBillingStartDate(
+      d.billingStartDate,
+      fyBounds.fyStart,
+      fyBounds.fyEnd,
+    );
+    if (dateErr) {
+      return NextResponse.json({ error: dateErr }, { status: 422 });
+    }
+  }
+
+  // ── Build customer document ────────────────────────────────────────────────
+  const seq        = await getNextSequence("customer");
   const customerId = `CUST-${String(seq).padStart(5, "0")}`;
 
-  const startDate = parsed.data.billingStartDate
-    ? new Date(parsed.data.billingStartDate)
-    : new Date();
-
-  const billingType = parsed.data.billingType || "monthly";
   const nextBillingDate = calculateNextBillingDate(startDate, billingType);
 
-  // Auto-link the billing location from the selected organisation/branch when not provided.
-  let resolvedLocationId = parsed.data.billingLocationId ? parsed.data.billingLocationId : undefined;
-  if (!resolvedLocationId && parsed.data.orgId) {
-    const org = await OrgSettings.findById(parsed.data.orgId).lean();
+  // Auto-link billing location from org when not provided
+  let resolvedLocationId = d.billingLocationId || undefined;
+  if (!resolvedLocationId && d.orgId) {
+    const org = await OrgSettings.findById(d.orgId).lean();
     resolvedLocationId = org?.locationId ? org.locationId.toString() : undefined;
   }
 
-  const customerPayload = {
-    ...parsed.data,
-    orgId: parsed.data.orgId ? parsed.data.orgId : undefined,
+  const customer = await Customer.create({
+    ...d,
+    orgId:             d.orgId             || undefined,
     billingLocationId: resolvedLocationId,
-    billingStartDate: startDate,
+    billingStartDate:  startDate,
     billingType,
     nextBillingDate,
     customerId,
     createdBy: session!.user.id,
-  };
+  });
 
-  const customer = await Customer.create(customerPayload);
+  // ── Auto-generate all past monthly bills in one go ─────────────────────────
+  // Only runs when services are configured; silently no-ops otherwise.
+  let billsResult = { created: [] as { month: string; year: number; invoiceNumber: string }[], skipped: [] as unknown[], errors: [] as unknown[] };
 
-  // If customer has services assigned, auto-generate their first bill (unpaid)
-  if (parsed.data.services && parsed.data.services.length > 0) {
+  if (d.services && d.services.length > 0) {
     try {
-      let billType = await BillType.findOne({ isActive: true });
-      if (!billType) billType = await BillType.findOne({});
-      if (!billType) {
-        try {
-          billType = await BillType.create({
-            name: "Standard Invoice",
-            code: "INV",
-            prefix: "INV",
-            createdBy: session!.user.id,
-          });
-        } catch (e: unknown) {
-          // Race / duplicate code (e.g. inactive INV exists) — reuse existing
-          if (e && typeof e === "object" && "code" in e && (e as { code: number }).code === 11000) {
-            billType = await BillType.findOne({ code: "INV" });
-          } else {
-            throw e;
-          }
-        }
-      }
-      if (!billType) throw new Error("BillType unavailable for auto-billing");
-
-      let fy = await FinancialYear.findOne({ isActive: true });
-      if (!fy) {
-        const currentYear = new Date().getFullYear();
-        fy = await FinancialYear.create({
-          name: `${currentYear}-${String(currentYear + 1).slice(-2)}`,
-          startDate: new Date(currentYear, 3, 1),
-          endDate: new Date(currentYear + 1, 2, 31),
-          isActive: true,
-          isClosed: false,
-          createdBy: session!.user.id,
-        });
-      }
-
-      const updatedBillType = await BillType.findByIdAndUpdate(
-        billType._id,
-        { $inc: { lastNumber: 1 } },
-        { new: true }
+      // Cast to ICustomer — customer was just created so all fields are present
+      billsResult = await generatePastBills(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        customer as any,
+        session!.user.id,
       );
 
-      const invoiceNumber = `${updatedBillType?.prefix || "INV"}/${fy.name}/${String(updatedBillType?.lastNumber || 1).padStart(6, "0")}`;
-
-      const items = parsed.data.services.map((s) => {
-        let quantity = Number(s.units) || 1;
-        let notes = s.description || "";
-
-        if (
-          s.type.toLowerCase() === "electricity" &&
-          s.calculationMode === "reading"
-        ) {
-          const init = Number(s.initialReading) || 0;
-          const curr = Number(s.currentReading) || 0;
-          quantity = Math.max(0, curr - init);
-          notes = `Meter Reading: ${curr} - ${init} = ${quantity} units (kWh)`;
-        }
-
-        const amount = parseFloat(((Number(s.rate) || 0) * quantity).toFixed(2));
-        const isElectricity = s.type.toLowerCase() === "electricity";
-        const isTaxable = s.isTaxable !== undefined ? s.isTaxable : (!isElectricity);
-        const gstRate = isElectricity ? 0 : (s.gstRate !== undefined && s.gstRate !== null && !isNaN(Number(s.gstRate)) ? Number(s.gstRate) : 18);
-        const gstAmount = isTaxable && gstRate > 0 ? parseFloat(((amount * gstRate) / 100).toFixed(2)) : 0;
-        const totalAmount = parseFloat((amount + gstAmount).toFixed(2));
-
-        return {
-          serviceName: s.type,
-          serviceCode: s.type.toUpperCase().slice(0, 4),
-          calculationType: isElectricity ? "METER" : "QUANTITY_RATE",
-          quantity,
-          unit: isElectricity ? "kWh" : "unit",
-          rate: Number(s.rate) || 0,
-          amount,
-          isTaxable,
-          gstRate,
-          gstAmount,
-          totalAmount,
-          notes,
-        };
-      });
-
-      const subtotal = parseFloat(items.reduce((acc, i) => acc + i.amount, 0).toFixed(2));
-      const totalGst = parseFloat(items.reduce((acc, i) => acc + i.gstAmount, 0).toFixed(2));
-      const grandTotal = parseFloat((subtotal + totalGst).toFixed(2));
-
-      const dueDate = new Date(startDate);
-      dueDate.setDate(dueDate.getDate() + 15);
-
-      const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-
-      await Bill.create({
-        invoiceNumber,
-        billTypeId: billType._id,
-        financialYearId: fy._id,
-        customerId: customer._id,
-        locationId: resolvedLocationId ? resolvedLocationId : undefined,
-        invoiceDate: startDate,
-        dueDate,
-        billingMonth: months[startDate.getMonth()],
-        billingYear: startDate.getFullYear(),
-        items,
-        subtotal,
-        discount: 0,
-        taxableAmount: subtotal,
-        totalGst,
-        otherCharges: 0,
-        roundOff: 0,
-        grandTotal,
-        paidAmount: 0,
-        outstandingAmount: grandTotal,
-        status: "unpaid",
-        notes: `Initial ${billingType} billing generated on client creation`,
-        createdBy: session!.user.id,
-      });
+      if (billsResult.errors.length > 0) {
+        console.warn(
+          `[customers POST] ${billsResult.errors.length} bill(s) failed to generate for ${customerId}:`,
+          billsResult.errors,
+        );
+      }
     } catch (err) {
-      console.error("[customers POST] auto-bill failed:", err);
-      // Allow customer creation even if auto-billing setup encounters missing master
+      // Bill generation failure MUST NOT roll back the customer save
+      console.error("[customers POST] bulk bill generation threw:", err);
     }
   }
 
-  return NextResponse.json({ data: customer }, { status: 201 });
+  return NextResponse.json(
+    {
+      data: customer,
+      billsGenerated: billsResult.created,
+      billsSkipped:   billsResult.skipped,
+      billErrors:     billsResult.errors,
+      message:
+        billsResult.created.length > 0
+          ? `Client created. ${billsResult.created.length} bill(s) auto-generated (${billsResult.created.map((b) => `${b.month} ${b.year}`).join(", ")}).`
+          : "Client created successfully.",
+    },
+    { status: 201 },
+  );
 }

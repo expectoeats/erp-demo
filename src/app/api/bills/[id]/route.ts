@@ -32,6 +32,58 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
   return NextResponse.json({ data: bill });
 }
 
+/**
+ * DELETE /api/bills/:id
+ * Hard-deletes a bill that is unpaid/cancelled only (paid bills are protected).
+ * Super-admin can force-delete any non-paid bill.
+ * Invoice number gap is intentional — accounting integrity requires no renumbering.
+ */
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { error, session } = await requireRole(ADMIN_ROLES);
+  if (error) return error;
+  await connectDB();
+
+  const { id } = await params;
+  const { searchParams } = new URL(req.url);
+  const reason = searchParams.get("reason") ?? "Deleted by admin";
+
+  const bill = await Bill.findById(id).lean();
+  if (!bill) return NextResponse.json({ error: "Bill not found" }, { status: 404 });
+
+  // Paid bills cannot be deleted — only cancelled first
+  if (bill.status === "paid" || bill.status === "partially_paid") {
+    return NextResponse.json(
+      { error: "Paid or partially paid bills cannot be deleted. Please cancel the bill first if needed." },
+      { status: 403 }
+    );
+  }
+
+  // Revert BillType sequence only if this was the last bill (best-effort)
+  try {
+    const BillTypeModel = (await import("@/lib/models/BillType")).default;
+    const bt = await BillTypeModel.findById(bill.billTypeId).lean();
+    if (bt) {
+      // Extract bill number from invoiceNumber (e.g. INV/2026-27/000001 → 1)
+      const parts = (bill.invoiceNumber ?? "").split("/");
+      const num = parseInt(parts[parts.length - 1] ?? "0");
+      if (!isNaN(num) && num === bt.lastNumber) {
+        await BillTypeModel.findByIdAndUpdate(bt._id, { $inc: { lastNumber: -1 } });
+      }
+    }
+  } catch (_e) {
+    // Non-critical — gap in numbering is acceptable
+  }
+
+  await Bill.findByIdAndDelete(id);
+
+  // Audit log
+  console.info(
+    `[Bill DELETE] id=${id} invoice=${bill.invoiceNumber} deletedBy=${session!.user.id} reason="${reason}"`
+  );
+
+  return NextResponse.json({ success: true, message: `Bill ${bill.invoiceNumber} deleted successfully.` });
+}
+
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { error, session } = await requireRole(ADMIN_ROLES);
   if (error) return error;

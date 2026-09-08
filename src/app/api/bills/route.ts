@@ -173,6 +173,24 @@ export async function POST(req: NextRequest) {
   if (!fy) fy = await FinancialYear.findOne({});
   if (!fy) return NextResponse.json({ error: "Financial year not found" }, { status: 400 });
 
+  // Validate invoice date falls within the selected financial year
+  const invoiceDateObj = new Date(d.invoiceDate);
+  const fyStart = new Date(fy.startDate);
+  const fyEnd   = new Date(fy.endDate);
+  // Set time to midnight for pure date comparison
+  invoiceDateObj.setHours(0, 0, 0, 0);
+  fyStart.setHours(0, 0, 0, 0);
+  fyEnd.setHours(23, 59, 59, 999);
+
+  if (invoiceDateObj < fyStart || invoiceDateObj > fyEnd) {
+    return NextResponse.json(
+      {
+        error: `Invoice date (${d.invoiceDate}) is outside the financial year ${fy.name} (${fyStart.toLocaleDateString("en-IN")} – ${fyEnd.toLocaleDateString("en-IN")}). Please select the correct financial year or adjust the invoice date.`,
+      },
+      { status: 422 }
+    );
+  }
+
   const invoiceNumber = `${billType.prefix}/${fy.name}/${String(billType.lastNumber).padStart(6, "0")}`;
 
   // Calculate using billing engine — pass serviceId as-is (stripped later)

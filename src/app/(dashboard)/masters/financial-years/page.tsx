@@ -32,11 +32,28 @@ export default function FinancialYearsPage() {
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
+    const attempt = async (): Promise<boolean> => {
+      try {
+        const r = await fetch("/api/financial-years", { signal });
+        if (!r.ok) return false;
+        const d = await r.json();
+        setData(d.data ?? []);
+        return true;
+      } catch (e: unknown) {
+        if (e instanceof DOMException && e.name === "AbortError") throw e;
+        return false;
+      }
+    };
     try {
-      const r = await fetch("/api/financial-years", { signal });
-      if (!r.ok) { setData([]); return; }
-      const d = await r.json();
-      setData(d.data ?? []);
+      const ok = await attempt();
+      if (!ok) {
+        for (const delay of [1500, 3000]) {
+          await new Promise((res) => setTimeout(res, delay));
+          const retried = await attempt();
+          if (retried) return;
+        }
+        setData([]);
+      }
     } catch (e: unknown) {
       if (e instanceof DOMException && e.name === "AbortError") return;
       setData([]);

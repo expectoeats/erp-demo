@@ -18,8 +18,28 @@ import {
   Building2,
   Calendar,
   CreditCard,
+  Download,
 } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { generateInvoicePDF } from "@/lib/utils/invoice-pdf";
+
+interface OrgData {
+  companyName: string;
+  orgCode?: string;
+  logo?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  gstin?: string;
+  pan?: string;
+  phone?: string;
+  email?: string;
+  website?: string;
+  bankDetails?: string;
+  invoiceFooter?: string;
+  isDefault?: boolean;
+}
 
 interface BillItem {
   serviceName: string;
@@ -103,6 +123,8 @@ export default function BillDetailPage({
   const [bill, setBill] = useState<BillData | null>(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
+  const [org, setOrg] = useState<OrgData | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
 
   useEffect(() => {
     async function loadBill() {
@@ -122,6 +144,17 @@ export default function BillDetailPage({
     }
     loadBill();
   }, [id]);
+
+  // Load org settings for the invoice header
+  useEffect(() => {
+    fetch("/api/settings/organisation")
+      .then((r) => r.json())
+      .then((d) => {
+        const list: OrgData[] = d.data ?? [];
+        setOrg(list.find((o) => o.isDefault) ?? list[0] ?? null);
+      })
+      .catch(() => {}); // non-fatal
+  }, []);
 
   async function handleMarkPaid() {
     if (!bill) return;
@@ -161,6 +194,16 @@ export default function BillDetailPage({
 
   function handlePrint() {
     window.print();
+  }
+
+  async function handleDownloadPDF() {
+    if (!bill) return;
+    setPdfLoading(true);
+    try {
+      await generateInvoicePDF(bill._id, (msg) => toast.error(msg));
+    } finally {
+      setPdfLoading(false);
+    }
   }
 
   if (loading) {
@@ -287,30 +330,52 @@ export default function BillDetailPage({
           <Button size="sm" onClick={handlePrint} className="shadow-xs gap-1.5">
             <Printer className="h-4 w-4" /> Print / Save as PDF
           </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleDownloadPDF}
+            disabled={pdfLoading}
+            className="shadow-xs gap-1.5 text-emerald-700 border-emerald-300 hover:bg-emerald-50"
+          >
+            <Download className="h-4 w-4" />
+            {pdfLoading ? "Preparing…" : "Download PDF"}
+          </Button>
         </div>
       </div>
 
       {/* Invoice Document Paper */}
       <div className="bg-white border border-slate-200 rounded-xl shadow-xs p-8 text-slate-800 print:border-none print:shadow-none print:p-0">
-        {/* Header Branding */}
+        {/* Header Branding — dynamically loaded from Org Settings */}
         <div className="flex items-start justify-between border-b-2 border-primary pb-6 mb-6">
           <div className="flex items-center gap-3.5">
             <div className="h-12 w-12 rounded-xl bg-slate-50 border border-slate-200 overflow-hidden flex items-center justify-center shrink-0">
-              <Image
-                src="/logo.jpeg"
-                alt="Logo"
-                width={48}
-                height={48}
-                className="h-full w-full object-contain"
-              />
+              {org?.logo ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={org.logo} alt="Logo" className="h-full w-full object-contain" />
+              ) : (
+                <Image src="/logo.jpeg" alt="Logo" width={48} height={48} className="h-full w-full object-contain" />
+              )}
             </div>
             <div>
               <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
-                PropertyERP
+                {org?.companyName ?? "Your Company"}
               </h1>
-              <p className="text-xs text-slate-500 font-medium">
-                Billing & Property Management System
-              </p>
+              {org?.orgCode && (
+                <p className="text-[10px] font-mono text-slate-400">{org.orgCode}</p>
+              )}
+              {(org?.address || org?.city || org?.state) && (
+                <p className="text-xs text-slate-500 font-medium">
+                  {[org.address, org.city, org.state, org.pincode].filter(Boolean).join(", ")}
+                </p>
+              )}
+              {org?.gstin && (
+                <p className="text-[11px] font-mono text-slate-500 font-semibold">GSTIN: {org.gstin}</p>
+              )}
+              {org?.phone && (
+                <p className="text-xs text-slate-500">
+                  {org.phone}{org.email ? ` · ${org.email}` : ""}
+                </p>
+              )}
             </div>
           </div>
 

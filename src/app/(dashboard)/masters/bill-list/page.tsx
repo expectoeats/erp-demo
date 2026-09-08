@@ -18,11 +18,12 @@ import { toast } from "sonner";
 import {
   Eye, AlertCircle, FileText, CheckCircle2, XCircle, Clock,
   Pencil, Plus, Trash2, Zap, Calculator, Layers,
-  Lock, Receipt, Loader2, FilePlus2, CalendarClock,
+  Lock, Receipt, Loader2, FilePlus2, CalendarClock, Download,
 } from "lucide-react";
 import Link from "next/link";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useDebounce } from "@/hooks/use-debounce";
+import { generateInvoicePDF } from "@/lib/utils/invoice-pdf";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -184,6 +185,12 @@ export default function BillListPage() {
   // modal
   const [modalOpen,      setModalOpen]      = useState(false);
   const [selectedBill,   setSelectedBill]   = useState<Bill | null>(null);
+
+  // delete dialog
+  const [deleteOpen,     setDeleteOpen]     = useState(false);
+  const [billToDelete,   setBillToDelete]   = useState<Bill | null>(null);
+  const [deleteReason,   setDeleteReason]   = useState("");
+  const [deleting,       setDeleting]       = useState(false);
   const [nbMonth,        setNbMonth]        = useState("");
   const [nbYear,         setNbYear]         = useState(currentYear);
   const [nbInvoiceDate,  setNbInvoiceDate]  = useState(new Date().toISOString().split("T")[0]);
@@ -251,6 +258,42 @@ export default function BillListPage() {
   useEffect(() => { fetch("/api/financial-years").then(r=>r.json()).then(d=>setFinancialYears(d.data??[])); }, []);
   useEffect(() => { load(); },      [load]);
   useEffect(() => { loadStats(); }, [loadStats]);
+
+  // ── Delete Bill ───────────────────────────────────────────────────────────
+  function openDeleteDialog(bill: Bill) {
+    setBillToDelete(bill);
+    setDeleteReason("");
+    setDeleteOpen(true);
+  }
+
+  async function confirmDelete() {
+    if (!billToDelete) return;
+    if (!deleteReason.trim()) {
+      toast.error("Please provide a reason for deletion.");
+      return;
+    }
+    setDeleting(true);
+    try {
+      const res = await fetch(
+        `/api/bills/${billToDelete._id}?reason=${encodeURIComponent(deleteReason)}`,
+        { method: "DELETE" }
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error((json as { error?: string }).error ?? "Failed to delete bill");
+        return;
+      }
+      toast.success(`Bill ${billToDelete.invoiceNumber} deleted successfully.`);
+      setDeleteOpen(false);
+      setBillToDelete(null);
+      load();
+      loadStats();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to delete bill");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   // ─────────────────────────────────────────────────────────────────────────
   // Open modal — load client data, lock billing type + elec mode
@@ -492,20 +535,33 @@ export default function BillListPage() {
         const isOverdue = due < new Date() && (row as unknown as Bill).status !== "paid" && (row as unknown as Bill).status !== "cancelled";
         return <div className="flex items-center gap-1">{isOverdue&&<AlertCircle className="h-3 w-3 text-red-500"/>}<span className={isOverdue?"text-red-600 font-semibold text-xs":"text-xs"}>{formatDate(v as string)}</span></div>;
       }},
-    { key: "_id", label: "Actions", className: "text-right w-24",
+    { key: "_id", label: "Actions", className: "text-right w-32",
       render: (_, row) => {
         const bill = row as unknown as Bill;
+        const canDelete = bill.status !== "paid" && bill.status !== "partially_paid";
         return (
           <div className="flex items-center justify-end gap-1">
             <Link href={`/transactions/bills/${bill._id}`}
               className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-muted transition-colors" title="View Invoice">
               <Eye className="h-3.5 w-3.5 text-muted-foreground" />
             </Link>
+            <button type="button" title="Download PDF"
+              onClick={() => generateInvoicePDF(bill._id, (msg) => toast.error(msg))}
+              className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-emerald-50 transition-colors">
+              <Download className="h-3.5 w-3.5 text-emerald-600" />
+            </button>
             <button type="button" title="Update Services & Generate Next Bill"
               onClick={() => openModal(bill)}
               className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-primary/10 transition-colors">
               <Pencil className="h-3.5 w-3.5 text-primary" />
             </button>
+            {canDelete && (
+              <button type="button" title="Delete Bill"
+                onClick={() => openDeleteDialog(bill)}
+                className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-red-50 transition-colors">
+                <Trash2 className="h-3.5 w-3.5 text-red-500" />
+              </button>
+            )}
           </div>
         );
       }},
@@ -929,6 +985,91 @@ export default function BillListPage() {
                 )}
               </Button>
             </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ════════════════════════════════════════════════════════════════════
+          DELETE BILL CONFIRMATION DIALOG
+          ════════════════════════════════════════════════════════════════════ */}
+      <Dialog open={deleteOpen} onOpenChange={(o) => { if (!deleting) setDeleteOpen(o); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="p-2 rounded-full bg-red-100">
+                <Trash2 className="h-5 w-5 text-red-600" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold text-slate-900">Delete Bill</DialogTitle>
+                <DialogDescription className="text-xs text-slate-500 mt-0.5">
+                  This action is permanent and cannot be undone.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-4 py-1">
+            {/* Bill info */}
+            <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs space-y-1">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Invoice No</span>
+                <span className="font-mono font-bold text-slate-800">{billToDelete?.invoiceNumber}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Customer</span>
+                <span className="font-medium text-slate-800">{billToDelete?.customerId?.name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Period</span>
+                <span className="text-slate-700">{billToDelete?.billingMonth} {billToDelete?.billingYear}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Amount</span>
+                <span className="font-semibold text-slate-800">
+                  {billToDelete ? new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(billToDelete.grandTotal) : ""}
+                </span>
+              </div>
+            </div>
+
+            {/* Warning */}
+            <div className="flex gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-800">
+                The invoice number <span className="font-mono font-bold">{billToDelete?.invoiceNumber}</span> will be permanently deleted.
+                This leaves a gap in the sequence — which is normal for accounting purposes.
+              </p>
+            </div>
+
+            {/* Reason */}
+            <div>
+              <Label className="text-xs font-semibold text-slate-700">Reason for Deletion *</Label>
+              <Input
+                className="mt-1.5 text-xs"
+                placeholder="e.g. Wrong billing period, duplicate entry…"
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                disabled={deleting}
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" size="sm" onClick={() => setDeleteOpen(false)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={confirmDelete}
+              disabled={deleting || !deleteReason.trim()}
+              className="min-w-[110px]"
+            >
+              {deleting ? (
+                <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Deleting…</>
+              ) : (
+                <><Trash2 className="h-3.5 w-3.5 mr-1.5" />Delete Bill</>
+              )}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
