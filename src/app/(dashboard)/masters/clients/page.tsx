@@ -343,10 +343,8 @@ export default function CustomersPage() {
         ? (defaultOrg.locationId as LocationRef)._id
         : (defaultOrg?.locationId as string) || "";
 
-    // Default billingStartDate = FY start (1 Apr) if active FY available, else today
-    const defaultStartDate = activeFY
-      ? new Date(activeFY.startDate).toISOString().split("T")[0]
-      : new Date().toISOString().split("T")[0];
+    // Default billingStartDate = today
+    const defaultStartDate = new Date().toISOString().split("T")[0];
 
     setForm({
       ...emptyForm,

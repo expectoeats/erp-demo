@@ -27,10 +27,16 @@ export default function UsersPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const r = await fetch("/api/admin/users");
-    const d = await r.json();
-    setData(d.data ?? []);
-    setLoading(false);
+    try {
+      const r = await fetch("/api/admin/users");
+      if (!r.ok) { setData([]); return; }
+      const d = await r.json();
+      setData(d.data ?? []);
+    } catch {
+      setData([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);

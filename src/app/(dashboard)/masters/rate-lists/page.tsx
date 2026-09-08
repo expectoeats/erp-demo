@@ -42,11 +42,17 @@ export default function RateListsPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const r = await fetch(`/api/rate-lists?search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=20`);
-    const d = await r.json();
-    setData(d.data ?? []);
-    setTotal(d.total ?? (d.data?.length ?? 0));
-    setLoading(false);
+    try {
+      const r = await fetch(`/api/rate-lists?search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=20`);
+      if (!r.ok) { setData([]); setTotal(0); return; }
+      const d = await r.json();
+      setData(d.data ?? []);
+      setTotal(d.total ?? (d.data?.length ?? 0));
+    } catch {
+      setData([]); setTotal(0);
+    } finally {
+      setLoading(false);
+    }
   }, [debouncedSearch, page]);
 
   useEffect(() => { load(); }, [load]);

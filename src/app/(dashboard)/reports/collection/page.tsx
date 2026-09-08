@@ -26,11 +26,17 @@ export default function CollectionPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const r = await fetch(`/api/payments?page=${page}&limit=25`);
-    const d = await r.json();
-    setData(d.data ?? []);
-    setTotal(d.total ?? 0);
-    setLoading(false);
+    try {
+      const r = await fetch(`/api/payments?page=${page}&limit=25`);
+      if (!r.ok) { setData([]); setTotal(0); return; }
+      const d = await r.json();
+      setData(d.data ?? []);
+      setTotal(d.total ?? 0);
+    } catch {
+      setData([]); setTotal(0);
+    } finally {
+      setLoading(false);
+    }
   }, [page]);
 
   useEffect(() => { load(); }, [load]);
