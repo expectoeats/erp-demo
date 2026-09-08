@@ -27,9 +27,9 @@ export async function connectDB(): Promise<typeof mongoose> {
     const opts: mongoose.ConnectOptions = {
       maxPoolSize: 10,
       minPoolSize: 2,
-      serverSelectionTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 10000,
       socketTimeoutMS: 30000,
-      connectTimeoutMS: 5000,
+      connectTimeoutMS: 10000,
       heartbeatFrequencyMS: 10000,
       retryWrites: true,
     };

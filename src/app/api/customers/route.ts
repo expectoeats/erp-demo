@@ -85,14 +85,12 @@ export async function GET(req: NextRequest) {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .lean()
-      .hint(search ? undefined : { createdAt: -1 }),
+      .lean(),
     Customer.countDocuments(query),
   ]);
 
   const res = NextResponse.json({ data, total, page, limit });
-  // 0.2s target: allow CDN / browser to cache for 5s, stale-while-revalidate 30s
-  res.headers.set("Cache-Control", "public, s-maxage=5, stale-while-revalidate=30");
+  res.headers.set("Cache-Control", "private, s-maxage=5, stale-while-revalidate=30");
   return res;
 }
 
