@@ -265,30 +265,24 @@ export default function CustomersPage() {
   const [activeFY, setActiveFY] = useState<{ startDate: string; endDate: string; name: string } | null>(null);
   const [startDateError, setStartDateError] = useState<string>("");
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    // keep previous data visible — spinner shows but table stays
+  // Production-ready instant load: no Abort cancel on initial, keeps previous data
+  const load = useCallback(async () => {
     setLoading(true);
+    const url = `/api/customers?search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=20`;
     try {
-      const r = await fetch(
-        `/api/customers?search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=20`,
-        { signal, cache: "no-store" } as RequestInit
-      );
+      const r = await fetch(url, { cache: "no-store" } as RequestInit);
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const d = await r.json();
       const nextData = d.data ?? [];
       const nextTotal = d.total ?? 0;
       setData(nextData);
       setTotal(nextTotal);
-      // cache for instant next load (only for default list without search)
       if (!debouncedSearch && page === 1) setInstantCache("cache:clients:list", { data: nextData, total: nextTotal });
-    } catch (e: unknown) {
-      if (e instanceof DOMException && e.name === "AbortError") return;
+    } catch {
+      // single fast retry for cold-start, no abort needed
       try {
-        await new Promise((res) => setTimeout(res, 300));
-        const r2 = await fetch(
-          `/api/customers?search=${encodeURIComponent(debouncedSearch)}&page=${page}&limit=20`,
-          { signal, cache: "no-store" } as RequestInit
-        );
+        await new Promise((res) => setTimeout(res, 250));
+        const r2 = await fetch(url, { cache: "no-store" } as RequestInit);
         if (r2.ok) {
           const d2 = await r2.json();
           const nd = d2.data ?? [];
@@ -296,30 +290,36 @@ export default function CustomersPage() {
           setData(nd);
           setTotal(nt);
           if (!debouncedSearch && page === 1) setInstantCache("cache:clients:list", { data: nd, total: nt });
-          return;
         }
       } catch {}
-      // keep previous data on error — never flash empty
     } finally {
       setLoading(false);
     }
   }, [debouncedSearch, page]);
 
   useEffect(() => {
-    const ac = new AbortController();
-    load(ac.signal);
-    return () => ac.abort();
+    load();
   }, [load]);
 
   useEffect(() => {
-    const ac = new AbortController();
     let mounted = true;
+    // instant cache for dropdowns — 30s
+    const cachedLoc = getInstantCache<{ data: LocationOption[] }>("cache:locations");
+    const cachedOrg = getInstantCache<{ data: OrgOption[] }>("cache:orgs");
+    const cachedFy = getInstantCache<{ data: typeof financialYears }>("cache:fys");
+    if (cachedLoc?.data) setLocations(cachedLoc.data as LocationOption[]);
+    if (cachedOrg?.data) setOrgs(cachedOrg.data as OrgOption[]);
+    if (cachedFy?.data) {
+      setFinancialYears(cachedFy.data as typeof financialYears);
+      const active = (cachedFy.data as typeof financialYears).find((f) => f.isActive);
+      if (active) setActiveFY({ startDate: active.startDate, endDate: active.endDate, name: active.name });
+    }
     async function loadDropdowns() {
       try {
         const [locRes, orgRes, fyRes] = await Promise.all([
-          fetch("/api/locations?limit=100", { signal: ac.signal }),
-          fetch("/api/settings/organisation", { signal: ac.signal }),
-          fetch("/api/financial-years", { signal: ac.signal }),
+          fetch("/api/locations?limit=100", { cache: "force-cache" } as RequestInit),
+          fetch("/api/settings/organisation", { cache: "force-cache" } as RequestInit),
+          fetch("/api/financial-years", { cache: "force-cache" } as RequestInit),
         ]);
         if (!mounted) return;
         if (locRes.ok) {
@@ -330,20 +330,27 @@ export default function CustomersPage() {
           const orgJson = await orgRes.json();
           if (orgJson.data) setOrgs(orgJson.data);
         }
+        if (locRes.ok) {
+          const locJson = await locRes.json();
+          if (locJson.data) { setLocations(locJson.data); setInstantCache("cache:locations", { data: locJson.data }); }
+        }
+        if (orgRes.ok) {
+          const orgJson = await orgRes.json();
+          if (orgJson.data) { setOrgs(orgJson.data); setInstantCache("cache:orgs", { data: orgJson.data }); }
+        }
         if (fyRes.ok) {
           const fyJson = await fyRes.json();
           if (fyJson.data) {
             setFinancialYears(fyJson.data);
+            setInstantCache("cache:fys", { data: fyJson.data });
             const active = fyJson.data.find((f: { isActive: boolean }) => f.isActive);
             if (active) setActiveFY({ startDate: active.startDate, endDate: active.endDate, name: active.name });
           }
         }
-      } catch (e: unknown) {
-        if (e instanceof DOMException && e.name === "AbortError") return;
-      }
+      } catch {}
     }
     loadDropdowns();
-    return () => { mounted = false; ac.abort(); };
+    return () => { mounted = false; };
   }, []);
 
   function openAdd() {

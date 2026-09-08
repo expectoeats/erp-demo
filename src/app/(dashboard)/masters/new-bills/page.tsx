@@ -274,14 +274,17 @@ export default function BillsPage() {
     return TAB_META[tab].statuses.join(",");
   }, [tab, statusFilter]);
 
-  const load = useCallback(async (signal?: AbortSignal) => {
+  const load = useCallback(async () => {
     setLoading(true);
+    const buildUrl = () => {
+      let u = `/api/bills?page=${page}&limit=20`;
+      if (debouncedInvoiceSearch) u += `&search=${encodeURIComponent(debouncedInvoiceSearch)}`;
+      if (debouncedClientSearch) u += `&clientSearch=${encodeURIComponent(debouncedClientSearch)}`;
+      if (effectiveStatus) u += `&status=${encodeURIComponent(effectiveStatus)}`;
+      return u;
+    };
     try {
-      let url = `/api/bills?page=${page}&limit=20`;
-      if (debouncedInvoiceSearch) url += `&search=${encodeURIComponent(debouncedInvoiceSearch)}`;
-      if (debouncedClientSearch) url += `&clientSearch=${encodeURIComponent(debouncedClientSearch)}`;
-      if (effectiveStatus) url += `&status=${encodeURIComponent(effectiveStatus)}`;
-      const r = await fetch(url, { signal, cache: "no-store" } as RequestInit);
+      const r = await fetch(buildUrl(), { cache: "no-store" } as RequestInit);
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const d = await r.json();
       const nd = d.data ?? [];
@@ -291,15 +294,10 @@ export default function BillsPage() {
       if (!debouncedInvoiceSearch && !debouncedClientSearch && page === 1 && effectiveStatus === "unpaid,overdue") {
         setInstantCache("cache:new-bills", { data: nd, total: nt });
       }
-    } catch (e: unknown) {
-      if (e instanceof DOMException && (e as DOMException).name === "AbortError") return;
+    } catch {
       try {
-        await new Promise((res) => setTimeout(res, 300));
-        let url2 = `/api/bills?page=${page}&limit=20`;
-        if (debouncedInvoiceSearch) url2 += `&search=${encodeURIComponent(debouncedInvoiceSearch)}`;
-        if (debouncedClientSearch) url2 += `&clientSearch=${encodeURIComponent(debouncedClientSearch)}`;
-        if (effectiveStatus) url2 += `&status=${encodeURIComponent(effectiveStatus)}`;
-        const r2 = await fetch(url2, { signal, cache: "no-store" } as RequestInit);
+        await new Promise((res) => setTimeout(res, 250));
+        const r2 = await fetch(buildUrl(), { cache: "no-store" } as RequestInit);
         if (r2.ok) {
           const d2 = await r2.json();
           const nd2 = d2.data ?? [];
@@ -308,10 +306,8 @@ export default function BillsPage() {
           if (!debouncedInvoiceSearch && !debouncedClientSearch && page === 1 && effectiveStatus === "unpaid,overdue") {
             setInstantCache("cache:new-bills", { data: nd2, total: nt2 });
           }
-          return;
         }
       } catch {}
-      // keep previous data — no empty flash
     } finally {
       setLoading(false);
     }
@@ -322,9 +318,7 @@ export default function BillsPage() {
   }, [tab, statusFilter, debouncedInvoiceSearch, debouncedClientSearch]);
 
   useEffect(() => {
-    const ac = new AbortController();
-    load(ac.signal);
-    return () => ac.abort();
+    load();
   }, [load]);
 
   // Handle opening next month bill modal for a Paid bill
