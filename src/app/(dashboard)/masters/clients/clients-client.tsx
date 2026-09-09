@@ -44,7 +44,7 @@ import {
 import { useDebounce } from "@/hooks/use-debounce";
 import { generateClientReportPDF } from "@/lib/utils/client-report";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { getInstantCache, setInstantCache } from "@/lib/instant-cache";
+import { getInstantCache, setInstantCache, clearInstantCache } from "@/lib/instant-cache";
 
 interface CustomerService {
   type: string;
@@ -513,6 +513,7 @@ export default function CustomersPage({ initialData, initialTotal }: ClientsClie
       toast.success(
         `${json.created?.length ?? 0} bill(s) generated successfully!${json.skipped?.length ? ` (${json.skipped.length} already existed)` : ""}`
       );
+      clearInstantCache("cache:new-bills");
       load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to generate bills");
@@ -652,6 +653,8 @@ export default function CustomersPage({ initialData, initialTotal }: ClientsClie
 
       setOpen(false);
       try { sessionStorage.removeItem("dashboard:stats"); sessionStorage.removeItem("dashboard:recent-bills"); } catch {}
+      clearInstantCache("cache:new-bills");
+      clearInstantCache("cache:clients:list");
       load();
     } catch {
       toast.error("Something went wrong");

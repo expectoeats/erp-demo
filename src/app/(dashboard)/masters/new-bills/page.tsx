@@ -42,7 +42,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useDebounce } from "@/hooks/use-debounce";
-import { getInstantCache, setInstantCache } from "@/lib/instant-cache";
+import { getInstantCache, setInstantCache, clearInstantCache } from "@/lib/instant-cache";
 
 const MONTHS = [
   "January",
@@ -147,7 +147,7 @@ const TAB_META: Record<TabKey, { label: string; statuses: string[]; icon: typeof
   },
   all: {
     label: "All",
-    statuses: [],
+    statuses: ["unpaid", "overdue", "partially_paid", "cancelled"],
     icon: Receipt,
     accent: "from-slate-50 to-zinc-50 border-slate-200 text-slate-700",
     ring: "ring-slate-200/60",
@@ -277,6 +277,11 @@ export default function BillsPage() {
     }
     return totals;
   }, [data]);
+
+  const tableData = useMemo(
+    () => data.filter((b) => b.status !== "paid"),
+    [data]
+  );
 
   const effectiveStatus = useMemo(() => {
     if (statusFilter) return statusFilter;
@@ -579,6 +584,7 @@ export default function BillsPage() {
       );
       setNextBillModalOpen(false);
       setTab("new");
+      clearInstantCache("cache:new-bills");
       load();
     } catch {
       toast.error("Something went wrong while generating next bill");
@@ -679,6 +685,7 @@ export default function BillsPage() {
       }
       toast.success("Bill updated successfully!");
       setEditModalOpen(false);
+      clearInstantCache("cache:new-bills");
       load();
     } catch {
       toast.error("Something went wrong");
@@ -923,7 +930,7 @@ export default function BillsPage() {
         <CardContent className="p-0">
           <DataTable
             columns={columns}
-            data={data as unknown as Record<string, unknown>[]}
+            data={tableData as unknown as Record<string, unknown>[]}
             loading={loading}
             totalCount={total}
             page={page}

@@ -32,7 +32,7 @@ import {
 import Link from "next/link";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useSearchParams } from "next/navigation";
-import { getInstantCache, setInstantCache } from "@/lib/instant-cache";
+import { getInstantCache, setInstantCache, clearInstantCache } from "@/lib/instant-cache";
 
 interface CustomerRef {
   _id: string;
@@ -244,6 +244,7 @@ function ReceiptsPageContent() {
         `Receipt generated: ${json.data.receiptNumber}! Bill updated to PAID.`
       );
       setModalOpen(false);
+      clearInstantCache("cache:new-bills");
       load();
       loadUnpaidBills();
     } catch {
