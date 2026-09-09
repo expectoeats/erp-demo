@@ -24,8 +24,9 @@ const statusVariants: Record<string, "default" | "success" | "warning" | "destru
   cancelled: "muted",
 };
 
-export function RecentBills() {
+export function RecentBills({ initialData }: { initialData?: RecentBill[] }) {
   const [bills, setBills] = useState<RecentBill[]>(() => {
+    if (initialData && initialData.length > 0) return initialData;
     try {
       const cached = sessionStorage.getItem("dashboard:recent-bills");
       if (cached) {
@@ -36,6 +37,7 @@ export function RecentBills() {
     return [];
   });
   const [loading, setLoading] = useState(() => {
+    if (initialData && initialData.length > 0) return false;
     try {
       const cached = sessionStorage.getItem("dashboard:recent-bills");
       if (cached) {

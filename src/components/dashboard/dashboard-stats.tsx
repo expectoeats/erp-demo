@@ -46,8 +46,9 @@ function StatCard({ label, value, icon: Icon, color, sub }: StatCardProps) {
   );
 }
 
-export function DashboardStats() {
+export function DashboardStats({ initialData }: { initialData?: StatsData | null }) {
   const [stats, setStats] = useState<StatsData | null>(() => {
+    if (initialData) return initialData;
     try {
       const cached = sessionStorage.getItem("dashboard:stats");
       if (cached) {
@@ -58,6 +59,7 @@ export function DashboardStats() {
     return null;
   });
   const [loading, setLoading] = useState(() => {
+    if (initialData) return false;
     try {
       const cached = sessionStorage.getItem("dashboard:stats");
       if (cached) {

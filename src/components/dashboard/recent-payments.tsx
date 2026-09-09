@@ -15,8 +15,9 @@ interface RecentPayment {
   paymentDate: string;
 }
 
-export function RecentPayments() {
+export function RecentPayments({ initialData }: { initialData?: RecentPayment[] }) {
   const [payments, setPayments] = useState<RecentPayment[]>(() => {
+    if (initialData && initialData.length > 0) return initialData;
     try {
       const cached = sessionStorage.getItem("dashboard:recent-payments");
       if (cached) {
@@ -27,6 +28,7 @@ export function RecentPayments() {
     return [];
   });
   const [loading, setLoading] = useState(() => {
+    if (initialData && initialData.length > 0) return false;
     try {
       const cached = sessionStorage.getItem("dashboard:recent-payments");
       if (cached) {
