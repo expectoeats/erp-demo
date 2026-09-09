@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // For dryRun: resolve which months already have bills and report without writing
+  // For dryRun: resolve which (month × service) combos already have bills
   if (dryRun) {
     const years = [...new Set(pendingMonths.map((m) => m.year))];
     const existing = await Bill.find({
@@ -88,26 +88,50 @@ export async function POST(req: NextRequest) {
       billingYear: { $in: years },
       status: { $ne: "cancelled" },
     })
-      .select("billingMonth billingYear invoiceNumber")
+      .select("billingMonth billingYear invoiceNumber items")
       .lean();
 
-    const existingSet = new Set(
-      existing.map((b) => `${b.billingMonth}-${b.billingYear}`),
-    );
+    // Build set of Month-Year-ServiceName keys for per-service duplicate detection
+    const existingSvcKeys = new Set<string>();
+    const svcList = customer.services ?? [];
 
-    const wouldCreate = pendingMonths.filter(
-      (m) => !existingSet.has(`${m.month}-${m.year}`),
-    );
-    const wouldSkip = pendingMonths
-      .filter((m) => existingSet.has(`${m.month}-${m.year}`))
-      .map((m) => ({
-        month: m.month,
-        year:  m.year,
-        reason: "Bill already exists",
-        existingInvoice: existing.find(
-          (b) => b.billingMonth === m.month && b.billingYear === m.year,
-        )?.invoiceNumber,
-      }));
+    for (const b of existing) {
+      const itemNames = b.items?.length
+        ? b.items.map((it) => (it.serviceName || "").toLowerCase())
+        : svcList.map((s: { type?: string }) => (s.type || "service").toLowerCase());
+      for (const sn of itemNames) {
+        existingSvcKeys.add(`${b.billingMonth}-${b.billingYear}-${sn}`);
+      }
+    }
+
+    interface DryEntry { month: string; year: number; service?: string; existingInvoice?: string; reason?: string; }
+    const wouldCreate: DryEntry[] = [];
+    const wouldSkip:   DryEntry[] = [];
+
+    for (const m of pendingMonths) {
+      for (const svc of svcList) {
+        const svcName = (svc.type || "service").toLowerCase();
+        const key = `${m.month}-${m.year}-${svcName}`;
+        const matchedExisting = existing.find(
+          (b) =>
+            b.billingMonth === m.month &&
+            b.billingYear === m.year &&
+            (!b.items?.length ||
+              b.items.some((it) => (it.serviceName || "").toLowerCase() === svcName)),
+        );
+        if (existingSvcKeys.has(key)) {
+          wouldSkip.push({
+            month:  m.month,
+            year:   m.year,
+            service: svcName,
+            existingInvoice: matchedExisting?.invoiceNumber,
+            reason: "Service bill already exists",
+          });
+        } else {
+          wouldCreate.push({ month: m.month, year: m.year, service: svcName });
+        }
+      }
+    }
 
     return NextResponse.json({
       dryRun:       true,

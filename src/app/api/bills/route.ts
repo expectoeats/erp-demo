@@ -255,6 +255,8 @@ export async function POST(req: NextRequest) {
       billingYear: d.billingYear,
       ...billing,
       items: itemsWithSafeServiceId,
+      status: "unpaid",
+      paidAmount: 0,
       outstandingAmount: billing.grandTotal,
       notes: d.notes,
       createdBy: session!.user.id,

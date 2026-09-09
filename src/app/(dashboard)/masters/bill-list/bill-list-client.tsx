@@ -24,6 +24,7 @@ import Link from "next/link";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useDebounce } from "@/hooks/use-debounce";
 import { generateInvoicePDF } from "@/lib/utils/invoice-pdf";
+import { clearInstantCache } from "@/lib/instant-cache";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -326,6 +327,7 @@ export default function BillListPage({ initialData, initialTotal, initialStats, 
         toast.error((json as { error?: string }).error ?? "Failed to delete bill");
         return;
       }
+      clearInstantCache("cache:new-bills");
       toast.success(`Bill ${billToDelete.invoiceNumber} deleted successfully.`);
       setDeleteOpen(false);
       setBillToDelete(null);
@@ -542,6 +544,7 @@ export default function BillListPage({ initialData, initialTotal, initialStats, 
         toast.error(json.error || `Failed to generate bill (HTTP ${res.status})`);
         return;
       }
+      clearInstantCache("cache:new-bills");
       toast.success(`New bill created: ${json.data?.invoiceNumber} — Paid bill (${selectedBill.invoiceNumber}) remains untouched.`);
       setModalOpen(false);
       load();

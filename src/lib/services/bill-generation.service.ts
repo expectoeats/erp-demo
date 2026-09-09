@@ -20,7 +20,7 @@ import Bill from "@/lib/models/Bill";
 import BillType from "@/lib/models/BillType";
 import FinancialYear from "@/lib/models/FinancialYear";
 import { calculateBill } from "@/lib/billing-engine";
-import type { ICustomer } from "@/lib/models/Customer";
+import type { ICustomer, ICustomerService } from "@/lib/models/Customer";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -98,7 +98,7 @@ export function getPendingMonths(
 
   const result: PendingMonth[] = [];
 
-  while (cursor < today) {
+  while (cursor <= today) {
     if (cursor >= fyStartNorm && cursor <= fyEndNorm) {
       const month = MONTHS[cursor.getMonth()];
       const year  = cursor.getFullYear();
@@ -113,37 +113,36 @@ export function getPendingMonths(
 }
 
 /**
- * Builds the service input array for calculateBill() from customer master data.
+ * Builds the service input for ONE customer service for calculateBill().
  *
  * Electricity past bills: generated with 0 units so the admin can edit the
  * actual meter reading later. A note is attached for visibility.
  */
-function buildServiceInputs(
-  customer: ICustomer,
+function buildOneServiceInput(
+  svc: ICustomerService,
   month: string,
   year: number,
 ) {
-  return (customer.services ?? []).map((svc) => {
-    const isElec   = (svc.type ?? "").toLowerCase() === "electricity";
-    const calcType = (isElec ? "METER" : "QUANTITY_RATE") as "METER" | "QUANTITY_RATE";
-    const quantity = isElec ? 0 : (Number(svc.units) || 1);
-    const notes    = isElec
-      ? `Auto-generated for ${month} ${year}. Enter actual meter reading to update.`
-      : undefined;
+  const isElec   = (svc.type ?? "").toLowerCase() === "electricity";
+  const calcType = (isElec ? "METER" : "QUANTITY_RATE") as "METER" | "QUANTITY_RATE";
+  const quantity = isElec ? 0 : (Number(svc.units) || 1);
+  const notes    = isElec
+    ? `Auto-generated for ${month} ${year}. Enter actual meter reading to update.`
+    : undefined;
 
-    return {
-      serviceId:       svc.type,
-      serviceName:     svc.type.charAt(0).toUpperCase() + svc.type.slice(1),
-      serviceCode:     svc.type.toUpperCase().slice(0, 4),
-      calculationType: calcType,
-      quantity,
-      unit:        isElec ? "kWh" : "unit",
-      rate:        Number(svc.rate) || 0,
-      isTaxable:   svc.isTaxable !== false,
-      gstRate:     Number(svc.gstRate) || 0,
-      notes,
-    };
-  });
+  const typeName = svc.type || "Service";
+  return {
+    serviceId:       typeName,
+    serviceName:     typeName.charAt(0).toUpperCase() + typeName.slice(1),
+    serviceCode:     typeName.toUpperCase().slice(0, 4),
+    calculationType: calcType,
+    quantity,
+    unit:        isElec ? "kWh" : "unit",
+    rate:        Number(svc.rate) || 0,
+    isTaxable:   svc.isTaxable !== false,
+    gstRate:     Number(svc.gstRate) || 0,
+    notes,
+  };
 }
 
 // ─── Main exported function ───────────────────────────────────────────────────
@@ -152,10 +151,13 @@ function buildServiceInputs(
  * Generates all missing monthly bills for a customer from their billingStartDate
  * up to (not including) the current month, constrained to the active FY.
  *
+ * RULE 3 — One bill PER SERVICE per month (NOT one combined bill).
+ * Example: 3 services × 2 months = 6 independent unpaid bills.
+ *
  * @param customer  - Mongoose lean or hydrated customer document
  * @param userId    - session.user.id for audit fields
- * @param options.existingBillKeys - optional pre-fetched set of "Month-Year" strings
- *                    to skip (avoids a second DB query when caller already has them)
+ * @param options.existingBillKeys - optional pre-fetched set of
+ *                    "Month-Year-ServiceName" strings to skip.
  */
 export async function generatePastBills(
   customer: ICustomer,
@@ -168,9 +170,11 @@ export async function generatePastBills(
   if (!customer.billingStartDate) return result;
   if (!customer.services?.length) return result;
   if (customer.billingType !== "monthly") {
-    // Quarterly / yearly: not yet supported — silently skip
     return result;
   }
+
+  const services = customer.services;
+  if (services.length === 0) return result;
 
   // ── Active FY ──────────────────────────────────────────────────────────────
   const fy = await FinancialYear.findOne({ isActive: true, isClosed: false }).lean();
@@ -193,44 +197,79 @@ export async function generatePastBills(
   );
   if (pendingMonths.length === 0) return result;
 
-  // ── Which months already have bills? ──────────────────────────────────────
-  let existingKeys = options.existingBillKeys;
-  if (!existingKeys) {
+  // ── SERVICE-LEVEL duplicate detection ──────────────────────────────────────
+  // Key format: `${Month}-${Year}-${ServiceName}` (one bill per service per month)
+  let existingSvcKeys = options.existingBillKeys;
+  if (!existingSvcKeys) {
     const years = [...new Set(pendingMonths.map((m) => m.year))];
     const existing = await Bill.find({
       customerId: customer._id as mongoose.Types.ObjectId,
       billingYear: { $in: years },
       status: { $ne: "cancelled" },
     })
-      .select("billingMonth billingYear invoiceNumber")
+      .select("billingMonth billingYear invoiceNumber items")
       .lean();
-    existingKeys = new Set(existing.map((b) => `${b.billingMonth}-${b.billingYear}`));
 
-    // Populate skipped list
+    existingSvcKeys = new Set<string>();
     for (const b of existing) {
+      const svcNames = b.items?.length
+        ? b.items.map((it) => (it.serviceName || "").toLowerCase())
+        : ["__combined__"];
+      for (const sn of svcNames) {
+        existingSvcKeys.add(`${b.billingMonth}-${b.billingYear}-${sn}`);
+      }
+      // If bill has no items (legacy combined bill), mark entire month as done
+      if (!b.items || b.items.length === 0) {
+        for (const svc of services) {
+          existingSvcKeys.add(`${b.billingMonth}-${b.billingYear}-${(svc.type || "").toLowerCase()}`);
+        }
+      }
+      // Populate skipped list with per-service entries
       const pm = pendingMonths.find(
         (m) => m.month === b.billingMonth && m.year === b.billingYear,
       );
       if (pm) {
-        result.skipped.push({
-          month: b.billingMonth,
-          year:  b.billingYear,
-          reason: "Bill already exists",
-          existingInvoice: b.invoiceNumber,
-        });
+        for (const sn of svcNames) {
+          result.skipped.push({
+            month: b.billingMonth,
+            year:  b.billingYear,
+            reason: sn === "__combined__"
+              ? "Combined bill already exists"
+              : `Bill for service already exists (${sn})`,
+            existingInvoice: b.invoiceNumber,
+          });
+        }
       }
     }
   }
 
-  const toCreate = pendingMonths.filter(
-    (m) => !existingKeys!.has(`${m.month}-${m.year}`),
-  );
-  if (toCreate.length === 0) return result;
+  // ── Build list of per-service creations: (month × service) ─────────────────
+  interface PerServiceTask {
+    month: string;
+    year: number;
+    invoiceDate: string;
+    service: ICustomerService;
+    serviceName: string;
+    key: string;
+  }
+  const tasks: PerServiceTask[] = [];
 
-  // ── Create bills sequentially ──────────────────────────────────────────────
-  for (const { month, year, invoiceDate } of toCreate) {
+  for (const { month, year, invoiceDate } of pendingMonths) {
+    for (const svc of services) {
+      const svcName = (svc.type || "service").toLowerCase();
+      const key     = `${month}-${year}-${svcName}`;
+      if (existingSvcKeys.has(key)) {
+        // Avoid double-adding to skipped (already added above when existing present)
+        continue;
+      }
+      tasks.push({ month, year, invoiceDate, service: svc, serviceName: svcName, key });
+    }
+  }
+  if (tasks.length === 0) return result;
+
+  // ── Create ONE BILL PER SERVICE sequentially ───────────────────────────────
+  for (const { month, year, invoiceDate, service, serviceName, key } of tasks) {
     try {
-      // Atomically increment BillType counter
       const bt = await BillType.findByIdAndUpdate(
         billTypeLean._id,
         { $inc: { lastNumber: 1 } },
@@ -240,8 +279,8 @@ export async function generatePastBills(
 
       const invoiceNumber = `${bt.prefix}/${fy.name}/${String(bt.lastNumber).padStart(6, "0")}`;
 
-      const services = buildServiceInputs(customer, month, year);
-      const billing  = calculateBill({ services });
+      const oneSvc   = buildOneServiceInput(service, month, year);
+      const billing  = calculateBill({ services: [oneSvc] });
 
       // Strip non-ObjectId serviceIds (e.g. plain strings like "electricity")
       const items = billing.items.map((item) => ({
@@ -266,12 +305,15 @@ export async function generatePastBills(
         billingYear:      year,
         ...billing,
         items,
+        status:           "unpaid",
+        paidAmount:       0,
         outstandingAmount: billing.grandTotal,
-        notes: `Auto-generated bill for ${month} ${year}.`,
+        notes: `Auto-generated ${serviceName} bill for ${month} ${year}.`,
         createdBy: new mongoose.Types.ObjectId(userId),
       });
 
       result.created.push({ month, year, invoiceNumber, grandTotal: billing.grandTotal });
+      existingSvcKeys.add(key);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       const isdup =
@@ -282,16 +324,14 @@ export async function generatePastBills(
         result.skipped.push({
           month,
           year,
-          reason: "Duplicate — bill already exists",
+          reason: `Duplicate — ${serviceName} bill already exists for ${month} ${year}`,
         });
-        // Counter was already incremented but bill wasn't created — revert
         await BillType.findByIdAndUpdate(
           billTypeLean._id,
           { $inc: { lastNumber: -1 } },
         ).catch(() => {});
       } else {
-        result.errors.push({ month, year, error: msg });
-        // Revert counter on failure so numbering stays consistent
+        result.errors.push({ month, year, error: `[${serviceName}] ${msg}` });
         await BillType.findByIdAndUpdate(
           billTypeLean._id,
           { $inc: { lastNumber: -1 } },

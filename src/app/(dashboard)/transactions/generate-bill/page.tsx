@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { formatCurrency } from "@/lib/utils";
 import { calculateBill } from "@/lib/billing-engine";
 import { Zap, Calculator, Activity } from "lucide-react";
+import { clearInstantCache } from "@/lib/instant-cache";
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
@@ -247,6 +248,7 @@ export default function GenerateBillPage() {
         if (r.status === 409 && d.error) { toast.error(d.error); return; }
         toast.error(d.error || "Failed to generate bill. Please retry."); return;
       }
+      clearInstantCache("cache:new-bills");
       toast.success(`Bill generated: ${d.data.invoiceNumber}`);
       router.push(`/transactions/bills/${d.data._id}`);
     } catch {
